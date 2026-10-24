@@ -96,7 +96,7 @@ cd /home/z3r0/Server
 source venv/bin/activate
 python -m UI.app
 ```
-Open browser to http://localhost:5001 (UI) to begin interacting with the platform
+Open browser to http://host-ip-or-dns:5001 (UI) to begin interacting with the platform
 
 ## Environment Variables
 

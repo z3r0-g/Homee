@@ -95,6 +95,12 @@ def update_bot(bot_id):
 @bots_bp.route("/api/bots/<bot_id>", methods=["DELETE"])
 def delete_bot(bot_id):
     bots_repo.load()
+    bot = bots_repo.get(bot_id)
+    if not bot:
+        return jsonify({"error": "Bot not found"}), 404
+    # Only allow deletion if the bot is already disabled
+    if bot.config.enabled:
+        return jsonify({"error": "Bot must be disabled before deletion"}), 403
     if bots_repo.delete(bot_id):
         return jsonify({"success": True})
     return jsonify({"error": "Bot not found"}), 404
@@ -112,6 +118,7 @@ def chat_bot(bot_id):
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
+    sent_at = _iso()
     personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
     system_prompt = personality.system_prompt if personality else ""
 
@@ -122,9 +129,10 @@ def chat_bot(bot_id):
     result = llm_router.chat(messages)
     assistant_response = result.get("message", {}).get("content", "")
 
+    received_at = _iso()
     bot.conversation_history.extend([
-        {"role": "user", "content": user_message},
-        {"role": "assistant", "content": assistant_response},
+        {"role": "user", "content": user_message, "timestamp": sent_at},
+        {"role": "assistant", "content": assistant_response, "timestamp": received_at},
     ])
     bot.conversation_history = bot.conversation_history[-20:]
     bot.updated_at = _iso()
@@ -160,6 +168,8 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
     if not task_prompt:
         return {"error": "No task prompt configured"}
 
+    started_at = _iso()
+
     personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
     system_prompt = personality.system_prompt if personality else ""
 
@@ -182,9 +192,28 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
-    from Agents.registry import agent_registry
-
-    agent_cls = agent_registry.get_agent("Demo System Agent")
+    # Determine agent based on personality_id
+    agent_cls = None
+    system_prompt = ""
+    
+    if bot.personality_id == "demo":
+        # Use Demo System Agent from demo.py
+        from Agents.registry import agent_registry
+        agent_cls = agent_registry.get_agent("Demo System Agent")
+        if agent_cls:
+            system_prompt = agent_cls().system_prompt
+    elif bot.personality_id == "general":
+        # Use General/Agent base class
+        from Agents.app import AgentBase
+        system_prompt = AgentBase.system_prompt
+    else:
+        # Look up personality from repository
+        personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
+        if personality:
+            system_prompt = personality.system_prompt
+        # Try to get agent from registry
+        from Agents.registry import agent_registry
+        agent_cls = agent_registry.get_agent(system_prompt[:20] if system_prompt else "")
 
     result_text = ""
     if agent_cls:
@@ -200,9 +229,11 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         llm_result = llm_router.chat(messages)
         result_text = llm_result.get("message", {}).get("content", "")
 
+    finished_at = _iso()
+
     bot.conversation_history.extend([
-        {"role": "user", "content": task_prompt},
-        {"role": "assistant", "content": result_text},
+        {"role": "user", "content": task_prompt, "timestamp": started_at},
+        {"role": "assistant", "content": result_text, "timestamp": finished_at},
     ])
     bot.conversation_history = bot.conversation_history[-20:]
     bot.status = "idle"
@@ -215,6 +246,7 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         "success": True,
         "bot_id": bot_id,
         "response": result_text,
+        "server_health": get_server_health()
     }
 
 

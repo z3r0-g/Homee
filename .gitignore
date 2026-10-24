@@ -18,3 +18,7 @@ __azurite_db_queue_extent__.json
 __azurite_db_table__.json
 AzuriteConfig
 *.bicepparam
+
+#Application Memory
+UI/instances/settings.json
+UI/instances/bots/bots_state.json

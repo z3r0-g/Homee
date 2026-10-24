@@ -57,9 +57,9 @@ def create_ui_app() -> Flask:
 
     # Root — serve the SPA
     @app.get("/")
-    def index():
+    def app_ui():
         from flask import render_template
-        return render_template("index.html")
+        return render_template("app.html")
 
     # Configure the independent Agents package from UI settings.
     # A git URL (if set) is cloned into Agents/remote/<name>; when unset the
