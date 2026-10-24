@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Homee AI Agent Platform</title>
+    <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+    <div class="topbar">
+        <div class="header-logo">
+            Homee AI Agent Platform
+        </div>
+        <div class="header-actions">
+            <span class="header-status">Connected</span>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Bots</h2>
+            </div>
+            <div class="sidebar-content" id="botList"></div>
+            <div class="sidebar-footer">
+                <button class="btn-new-bot" id="newBotBtn">+ New Bot</button>
+                <button class="btn-secondary" id="settingsBtn">Settings</button>
+            </div>
+        </aside>
+
+        <main class="chat-area">
+            <div class="chat-header">
+                <div class="chat-title">Agent Console</div>
+                <div class="chat-status status-pill">Ready</div>
+            </div>
+            <div id="chatArea" class="chat-host">
+                <div class="empty">Select a bot to begin</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- CREATE BOT MODAL -->
+    <div id="newBotModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Create New Bot</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <form id="newBotForm">
+                <div class="form-group">
+                    <label>Bot Name</label>
+                    <input type="text" id="newBotName" placeholder="Research Bot" required>
+                </div>
+                <div class="form-group">
+                    <label>Agent Personality</label>
+                    <select id="newBotPersonality">
+                        <option value="">(none)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Task Prompt</label>
+                    <textarea id="newBotTaskPrompt" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Schedule</label>
+                    <select id="newBotSchedule">
+                        <option value="none">None</option>
+                        <option value="interval">Every N Seconds</option>
+                    </select>
+                </div>
+                <div class="form-group" id="scheduleOptions" style="display:none;">
+                    <label>Interval</label>
+                    <input type="number" id="newBotInterval" value="3600" min="60">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="newBotEnabled" checked>
+                        Enabled
+                    </label>
+                </div>
+                <button type="submit" class="btn-save">Create Bot</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- PERSONALITY MODAL -->
+    <div id="personalityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Personality</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <form id="personalityForm">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="personalityName" required>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="personalityDescription"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Skills</label>
+                    <input type="text" id="personalitySkills">
+                </div>
+                <div class="form-group">
+                    <label>Abilities</label>
+                    <input type="text" id="personalityAbilities">
+                </div>
+                <div class="form-group">
+                    <label>System Prompt</label>
+                    <textarea id="personalitySystemPrompt"></textarea>
+                </div>
+                <button type="submit" class="btn-save">Save Personality</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MARKETPLACE MODAL -->
+    <div id="marketplaceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Marketplace</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div id="marketplaceGrid" class="marketplace-grid"></div>
+        </div>
+    </div>
+
+    <!-- SETTINGS MODAL -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Settings</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <form id="settingsForm">
+                <div class="form-group">
+                    <label>LLM Provider</label>
+                    <select id="settingsLlmProvider">
+                        <option value="local">Local Ollama</option>
+                        <option value="remote">Remote Cloud LLM</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Local Model</label>
+                    <input type="text" id="settingsLocalModel" value="qwen2.5">
+                </div>
+                <div class="form-group">
+                    <label>Remote Base URL</label>
+                    <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                </div>
+                <div class="form-group">
+                    <label>Remote API Key</label>
+                    <input type="password" id="settingsRemoteApiKey">
+                </div>
+                <div class="form-group">
+                    <label>Remote Model</label>
+                    <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="settingsSchedulerEnabled" checked>
+                        Scheduler Enabled
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>Scheduler Tick (seconds)</label>
+                    <input type="number" id="settingsSchedulerTick" value="30" min="5">
+                </div>
+                <button type="submit" class="btn-save">Save Settings</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
