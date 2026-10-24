@@ -1,0 +1,1 @@
+"""MCP agent-callable endpoints."""

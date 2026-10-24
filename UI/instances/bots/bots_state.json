@@ -1,0 +1,32 @@
+{
+  "461c1f11-d4b7-442c-9d67-8bf8cda1f635": {
+    "id": "461c1f11-d4b7-442c-9d67-8bf8cda1f635",
+    "name": "Test",
+    "personality_id": "",
+    "status": "idle",
+    "created_at": "2026-10-24T20:38:27.265642+00:00",
+    "updated_at": "2026-10-24T20:40:32.957333+00:00",
+    "conversation_history": [
+      {
+        "role": "user",
+        "content": "Monitor local compute and disk and report on growth trends, with calculated \"out of space\" dates weekly."
+      },
+      {
+        "role": "assistant",
+        "content": "Currently, you have 845 GB free out of 912 GB. To provide you with a weekly report on disk usage trends and potential \"out of space\" dates, I'll set up a script to monitor this. Would you like to proceed with this setup?"
+      }
+    ],
+    "knowledge_base_path": "/home/z3r0/Server/UI/instances/knowledge/kb_461c1f11-d4b7-442c-9d67-8bf8cda1f635.md",
+    "mcps": [],
+    "config": {
+      "schedule_type": "interval",
+      "interval_seconds": 3600,
+      "cron_expression": "",
+      "task_prompt": "Monitor local compute and disk and report on growth trends, with calculated \"out of space\" dates weekly.",
+      "enabled": true,
+      "last_run": "2026-10-24T20:40:32.957350+00:00",
+      "next_run": null,
+      "run_count": 1
+    }
+  }
+}
