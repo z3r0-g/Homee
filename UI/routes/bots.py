@@ -9,6 +9,7 @@ from flask import Blueprint, jsonify, request
 from ..config import MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, personalities_repo, Bot, BotConfig
+from Agents.local.demo import get_server_health
 
 bots_bp = Blueprint("bots", __name__)
 llm_router = LLMRouter()
