@@ -1,6 +1,8 @@
 # Homee AI Agent Platform
 >Designed to run on repurposed Mac Mini A1347 Metal.
 
+![Homee](UI/static/homee.png)
+
 ## Overview
 
 ***WARNING*** This platform was designed with AI coding agents as a key component of the development workflow to provide a comprehensive system for managing AI agent bots on lightweight hardware with the following in mind:
