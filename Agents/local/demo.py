@@ -13,7 +13,7 @@ from Agents.app import AgentBase, get_disk_space, run_shell
 
 
 class DemoAgent(AgentBase):
-    name = "Demo System Agent"
+    name = "Demo (System Agent)"
     description = "A helpful local system assistant that can check disk space and run shell commands."
     system_prompt = (
         "You are a helpful local system assistant. You have access to tools for "

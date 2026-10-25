@@ -28,16 +28,7 @@ class AgentResult:
 
 
 class AgentBase:
-    """Base class for Agent personalities.
-
-    Subclasses define:
-      - name: human-readable agent name
-      - description: what the agent does
-      - system_prompt: instructions that shape the agent's behaviour
-      - tools: list of callables the LLM may invoke
-    """
-
-    name: str = "Agent"
+    name: str = "Generic Homee"
     description: str = "A generic AI agent."
     system_prompt: str = "You are a helpful assistant."
     model: str = AGENT_MODEL

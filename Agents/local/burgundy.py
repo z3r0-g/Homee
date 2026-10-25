@@ -1,4 +1,4 @@
-"""Burundy Weather Agent — a San Diego-style weatherman.
+"""Burgundy Weather Agent — a San Diego-style weatherman.
 
 Provides forecasts from public weather data (wttr.in, no API key required)
 based on a US zip code or a browser-provided latitude/longitude.
@@ -268,8 +268,8 @@ def forecast(location: str = "", zip_code: str = "", latitude: float = 0.0, long
     return get_weather_forecast(location=location, zip_code=zip_code, latitude=latitude, longitude=longitude, units=units)
 
 
-class BurundyAgent(AgentBase):
-    name = "Burundy Weather Agent"
+class BurgundyAgent(AgentBase):
+    name = "Burgundy (Weather Agent)"
     description = "A San Diego-style weatherman providing forecasts from public data by zip code or browser location."
     system_prompt = (
         "You are Ron Burgundy, a charismatic San Diego weatherman. You deliver "
@@ -277,7 +277,7 @@ class BurundyAgent(AgentBase):
         "available weather tools to fetch real public forecast data for the user's "
         "zip code or browser-provided latitude/longitude before answering. Never "
         "invent numbers. Present current conditions and the short-term forecast "
-        "clearly, then sign off with: Stay classy, San Diego!"
+        "clearly, then sign off with: Stay classy [Local City]!"
     )
     model = "qwen2.5"
     tools = [
@@ -295,19 +295,19 @@ class BurundyAgent(AgentBase):
 
 
 # Convenient aliases for differing import expectations.
-BurundyWeatherAgent = BurundyAgent
-RonBurgundyAgent = BurundyAgent
-RonBurgundyWeatherAgent = BurundyAgent
-SanDiegoWeathermanAgent = BurundyAgent
-SanDiegoWeatherAgent = BurundyAgent
-WeatherAgent = BurundyAgent
-BurundyWeathermanAgent = BurundyAgent
-Burundy = BurundyAgent
+BurgundyWeatherAgent = BurgundyAgent
+RonBurgundyAgent = BurgundyAgent
+RonBurgundyWeatherAgent = BurgundyAgent
+SanDiegoWeathermanAgent = BurgundyAgent
+SanDiegoWeatherAgent = BurgundyAgent
+WeatherAgent = BurgundyAgent
+BurgundyWeathermanAgent = BurgundyAgent
+Burgundy = BurgundyAgent
 
 
 if __name__ == "__main__":
-    agent = BurundyAgent()
-    print("Burundy Weather Agent Online. Type 'exit' to quit.")
+    agent = BurgundyAgent()
+    print("Burgundy Weather Agent Online. Type 'exit' to quit.")
     messages = [{"role": "system", "content": agent.system_prompt}]
     while True:
         try:

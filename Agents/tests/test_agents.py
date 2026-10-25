@@ -59,8 +59,8 @@ def test_run_shell_echo():
 # Burundy Weather Agent
 # ════════════════════════════════════════════════════════════════
 
-import Agents.local.burundy as burundy  # noqa: E402
-from Agents.local.burundy import (  # noqa: E402
+import Agents.local.burgundy as burgundy  # noqa: E402
+from Agents.local.burgundy import (  # noqa: E402
     BurundyAgent,
     BurundyWeatherAgent,
     get_weather_by_zip,
@@ -137,7 +137,7 @@ def test_burundy_system_prompt_style():
 
 def test_get_weather_forecast_by_zip(monkeypatch):
     monkeypatch.setattr(
-        burundy.requests, "get", lambda *a, **k: _FakeResponse(_WTTR_SAMPLE)
+        burgundy.requests, "get", lambda *a, **k: _FakeResponse(_WTTR_SAMPLE)
     )
     result = get_weather_by_zip("92101")
     assert "San Diego" in result
@@ -148,7 +148,7 @@ def test_get_weather_forecast_by_zip(monkeypatch):
 
 def test_get_weather_forecast_metric(monkeypatch):
     monkeypatch.setattr(
-        burundy.requests, "get", lambda *a, **k: _FakeResponse(_WTTR_SAMPLE)
+        burgundy.requests, "get", lambda *a, **k: _FakeResponse(_WTTR_SAMPLE)
     )
     result = get_weather_forecast(latitude=32.7, longitude=-117.1, units="metric")
     assert "°C" in result
@@ -162,7 +162,7 @@ def test_get_weather_forecast_no_location(monkeypatch):
         called["n"] += 1
         raise AssertionError("requests.get should not be called with no location")
 
-    monkeypatch.setattr(burundy.requests, "get", _boom)
+    monkeypatch.setattr(burgundy.requests, "get", _boom)
     result = get_weather_forecast()
     assert "zip code" in result.lower()
     assert called["n"] == 0
@@ -170,7 +170,7 @@ def test_get_weather_forecast_no_location(monkeypatch):
 
 def test_get_weather_forecast_http_error(monkeypatch):
     monkeypatch.setattr(
-        burundy.requests,
+        burgundy.requests,
         "get",
         lambda *a, **k: _FakeResponse({"error": "bad"}, status_code=404),
     )
@@ -184,6 +184,6 @@ def test_get_weather_forecast_connection_error(monkeypatch):
     def _raise(*a, **k):
         raise requests.ConnectionError("boom")
 
-    monkeypatch.setattr(burundy.requests, "get", _raise)
+    monkeypatch.setattr(burgundy.requests, "get", _raise)
     result = get_weather_by_zip("92101")
     assert "unavailable" in result.lower()
