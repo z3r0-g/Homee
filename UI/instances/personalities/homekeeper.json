@@ -1,0 +1,21 @@
+{
+  "id": "homekeeper_v1",
+  "name": "HomeKeeper",
+  "agent_module": "Agents.local.homekeeper",
+  "agent_class": "HomeKeeperAgent",
+  "system_prompt_override": null,
+  "skills": ["system_health_check", "vault_index", "backup_verifier"],
+  "default_schedule": {
+    "enabled": true,
+    "interval_seconds": 3600,
+    "task": "health check and family briefing",
+    "run_on_boot": true
+  },
+  "llm_config": {
+    "preferred_model": "qwen2.5:3b",
+    "fallback_model": "phi3:mini",
+    "temperature": 0.2,
+    "max_tokens": 512
+  },
+  "mcp_requirements": ["system/disk", "system/shell", "knowledge"]
+}
