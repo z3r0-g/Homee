@@ -14,6 +14,38 @@ def list_agents():
     return jsonify({"agents": agent_registry.list_agents()})
 
 
+@agents_bp.route("/api/agents/available-personalities", methods=["GET"])
+def available_personalities():
+    """Combined list of saved personalities plus discovered agents.
+
+    Lets the New-Bot form offer *every* selectable personality in one place,
+    including locally-discovered agents like the Burundy Weather Agent that are
+    not stored in the personalities repository.
+    """
+    from ..models import personalities_repo
+
+    personalities_repo.load()
+    items = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "type": "personality",
+        }
+        for p in personalities_repo.all()
+    ]
+    for agent in agent_registry.list_agents():
+        items.append(
+            {
+                "id": agent["name"],
+                "name": agent["name"],
+                "description": agent.get("description", ""),
+                "type": "agent",
+            }
+        )
+    return jsonify({"personalities": items})
+
+
 @agents_bp.route("/api/agents/sources", methods=["GET"])
 def list_sources():
     from Agents.registry import load_sources

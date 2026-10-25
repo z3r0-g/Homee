@@ -207,13 +207,22 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         from Agents.app import AgentBase
         system_prompt = AgentBase.system_prompt
     else:
-        # Look up personality from repository
-        personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
-        if personality:
-            system_prompt = personality.system_prompt
-        # Try to get agent from registry
+        # A personality id may correspond to a discovered agent name rather than
+        # a saved personality. Resolve agents first so bot creators can pick an
+        # agent (e.g. "Burundy Weather Agent") directly from the New-Bot form.
         from Agents.registry import agent_registry
-        agent_cls = agent_registry.get_agent(system_prompt[:20] if system_prompt else "")
+
+        agent_cls = agent_registry.get_agent(bot.personality_id)
+        if agent_cls:
+            system_prompt = agent_cls().system_prompt
+        else:
+            personality = (
+                personalities_repo.get(bot.personality_id)
+                if bot.personality_id
+                else None
+            )
+            if personality:
+                system_prompt = personality.system_prompt
 
     result_text = ""
     if agent_cls:

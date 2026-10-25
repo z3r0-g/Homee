@@ -71,16 +71,26 @@ function renderBotList(bots) {
 // Load personalities for the new-bot dropdown
 async function loadPersonalitiesForNewBot() {
     try {
-        const response = await fetch(`${API_BASE}/api/personalities`);
+        const response = await fetch(`${API_BASE}/api/agents/available-personalities`);
+        if (!response.ok) {
+            throw new Error('Server responded with ' + response.status);
+        }
         const data = await response.json();
         const select = document.getElementById('newBotPersonality');
         if (select) {
-            select.innerHTML = '<option value="demo">Demo Mode</option>' +
-                '<option value="general">General</option>' +
-                (data.personalities || []).map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+            select.innerHTML = '<option value="">(none)</option>' +
+                (data.personalities || []).map(p =>
+                    `<option value="${p.id}">${p.name}</option>`
+                ).join('');
         }
     } catch (e) {
-        console.warn('Failed to load personalities', e);
+        console.warn('Failed to load available personalities', e);
+        const select = document.getElementById('newBotPersonality');
+        if (select) {
+            select.innerHTML = '<option value="">(none)</option>' +
+                '<option value="demo">Demo Mode</option>' +
+                '<option value="general">General</option>';
+        }
     }
 }
 
