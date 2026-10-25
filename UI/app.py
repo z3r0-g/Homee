@@ -34,7 +34,6 @@ _scheduler: BotScheduler | None = None
 
 
 def create_ui_app() -> Flask:
-    """Create and configure the UI Flask application (App Factory pattern)."""
     app = Flask(__name__, static_folder="static", template_folder="templates")
 
     # Load persisted state
@@ -79,10 +78,6 @@ def create_ui_app() -> Flask:
 
 
 def _run_scheduled_bot(bot_id: str) -> None:
-    """Callback invoked by the scheduler when a Bot is due to run.
-
-    Delegates to the shared bot-execution logic used by the /run route.
-    """
     from .routes.bots import _execute_bot_task  # noqa: WPS433
 
     try:
