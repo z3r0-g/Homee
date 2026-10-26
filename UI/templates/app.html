@@ -13,7 +13,7 @@
             Homee AI Agent Platform
         </div>
         <div class="header-actions">
-            <span class="header-status">Connected</span>
+            <span class="header-status" id="llmStatusPill">Checking LLM…</span>
         </div>
     </div>
 
@@ -34,6 +34,7 @@
                 <div class="chat-title">Agent Console</div>
                 <div class="chat-status status-pill">Ready</div>
             </div>
+            <div id="llmBanner" class="llm-banner" style="display:none;"></div>
             <div id="chatArea" class="chat-host">
                 <div class="empty">Select a bot to begin</div>
             </div>
@@ -145,7 +146,19 @@
                 </div>
                 <div class="form-group">
                     <label>Local Model</label>
-                    <input type="text" id="settingsLocalModel" value="qwen2.5">
+                    <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
+                </div>
+                <div class="form-group">
+                    <label>Installed Ollama Models</label>
+                    <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
+                    <select id="settingsInstalledModels">
+                        <option value="">(no models detected)</option>
+                    </select>
+                    <div class="form-row">
+                        <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
+                        <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
+                    </div>
+                    <div id="pullStatus" class="llm-status"></div>
                 </div>
                 <div class="form-group">
                     <label>Remote Base URL</label>

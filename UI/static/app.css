@@ -556,3 +556,31 @@ button,
         flex-wrap: wrap;
     }
 }
+/* ── LLM status (ollama-first) ─────────────────────────────────────── */
+.header-status.ok { color: var(--color-success); }
+.header-status.warn { color: var(--color-warning); }
+.header-status.bad { color: var(--color-danger); }
+
+.llm-status {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    margin: 4px 0 8px;
+}
+.llm-status.ok { color: var(--color-success); }
+.llm-status.bad { color: var(--color-danger); }
+
+.llm-banner {
+    background: rgba(255, 185, 0, 0.15);
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-md);
+    padding: 10px 14px;
+    margin: 0 16px 12px;
+    font-size: 0.9rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.form-row input { flex: 1; }

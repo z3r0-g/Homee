@@ -220,7 +220,7 @@ async function openBotChat(botId) {
         
         msgDiv.innerHTML = `
             <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
-            <div class="message-content">${msg.content}</div>
+            <div class="message-content">${isUser ? escapeHtml(msg.content) : msg.content}</div>
             <div>${timeLabel}${elapsedLabel}</div>
         `;
         historyDiv.appendChild(msgDiv);
@@ -259,7 +259,7 @@ async function sendMessage(input, botId) {
     userDiv.className = 'message message-user';
     userDiv.innerHTML = `
         <div class="message-label">You</div>
-        <div class="message-content">${message}</div>
+        <div class="message-content">${escapeHtml(message)}</div>
         <div class="message-time">${sentAt.toLocaleTimeString()}</div>
     `;
     historyDiv.appendChild(userDiv);
@@ -370,7 +370,8 @@ async function loadSettings() {
         const response = await fetch(`${API_BASE}/api/settings`);
         const settings = await response.json();
         document.getElementById('settingsLlmProvider').value = settings.llm?.provider || 'local';
-        document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5';
+        document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5:7b';
+        loadLlmStatus();
         document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
         document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
         document.getElementById('settingsRemoteModel').value = settings.llm?.remote_model || 'gpt-4o-mini';
@@ -503,3 +504,120 @@ function closeModal(modal) {
 
 // Initialize application
 init();
+// ── LLM status (Ollama) ──────────────────────────────────────────────
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+// Fetch /api/llm/status and reflect it in the header pill, the Settings
+// model list, and the first-run banner. Safe to call any time.
+async function loadLlmStatus() {
+    const pill = document.getElementById('llmStatusPill');
+    const line = document.getElementById('llmStatusLine');
+    const banner = document.getElementById('llmBanner');
+    const select = document.getElementById('settingsInstalledModels');
+    const localModel = document.getElementById('settingsLocalModel');
+    try {
+        const response = await fetch(`${API_BASE}/api/llm/status`);
+        const status = await response.json();
+        let pillText, pillClass, bannerText = '';
+        if (!status.running) {
+            pillText = 'Ollama offline'; pillClass = 'bad';
+            bannerText = 'Ollama is offline — start it with `ollama serve`, then pull a model from Settings → Models.';
+            if (line) { line.textContent = status.error || 'Ollama is not reachable.'; line.className = 'llm-status bad'; }
+        } else if (!status.configured_model_installed) {
+            pillText = 'Ollama · model missing'; pillClass = 'warn';
+            bannerText = `Ollama is running, but '${status.configured_model}' is not installed — pull it from Settings → Models.`;
+            if (line) { line.textContent = bannerText; line.className = 'llm-status bad'; }
+        } else {
+            pillText = `Ollama · ${status.configured_model}`; pillClass = 'ok';
+            if (line) { line.textContent = `Ollama is running with ${status.models.length} model(s) installed.`; line.className = 'llm-status ok'; }
+        }
+        if (pill) { pill.textContent = pillText; pill.className = `header-status ${pillClass}`; }
+        if (banner) {
+            if (bannerText) { banner.style.display = 'block'; banner.textContent = bannerText; }
+            else banner.style.display = 'none';
+        }
+        if (select) {
+            const current = localModel ? localModel.value : status.configured_model;
+            select.innerHTML = status.models.length
+                ? status.models.map(m => `<option value="${escapeHtml(m)}"${m === current ? ' selected' : ''}>${escapeHtml(m)}</option>`).join('')
+                : '<option value="">(no models detected)</option>';
+        }
+    } catch (e) {
+        if (pill) { pill.textContent = 'LLM status unknown'; pill.className = 'header-status warn'; }
+        console.warn('Failed to load LLM status', e);
+    }
+}
+
+// Model pull: POST starts a background job; poll until it lands.
+let pullPollTimer = null;
+async function pollPullStatus() {
+    const el = document.getElementById('pullStatus');
+    const btn = document.getElementById('pullModelBtn');
+    try {
+        const response = await fetch(`${API_BASE}/api/llm/pull`);
+        const job = (await response.json()).job || {};
+        if (el) el.textContent = job.detail || '';
+        if (job.state === 'done' || job.state === 'error') {
+            if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+            if (btn) btn.disabled = false;
+            await loadLlmStatus();
+            if (job.state === 'done') {
+                const select = document.getElementById('settingsInstalledModels');
+                const localModel = document.getElementById('settingsLocalModel');
+                if (select) select.value = job.model;
+                if (localModel) localModel.value = job.model;
+            }
+        }
+    } catch (e) {
+        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+        if (btn) btn.disabled = false;
+        if (el) el.textContent = 'Pull status check failed.';
+    }
+}
+
+async function startPull() {
+    const input = document.getElementById('pullModelName');
+    const el = document.getElementById('pullStatus');
+    const btn = document.getElementById('pullModelBtn');
+    const model = (input ? input.value.trim() : '') ||
+        (document.getElementById('settingsLocalModel') || {}).value || '';
+    if (!model) { if (el) el.textContent = 'Enter a model name first.'; return; }
+    if (btn) btn.disabled = true;
+    if (el) el.textContent = 'Starting pull…';
+    try {
+        const response = await fetch(`${API_BASE}/api/llm/pull`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            if (el) el.textContent = data.error || 'Pull failed to start.';
+            if (btn) btn.disabled = false;
+            return;
+        }
+        if (el) el.textContent = data.job.detail || 'Pulling…';
+        if (pullPollTimer) clearInterval(pullPollTimer);
+        pullPollTimer = setInterval(pollPullStatus, 2000);
+    } catch (e) {
+        if (el) el.textContent = `Pull failed: ${e.message}`;
+        if (btn) btn.disabled = false;
+    }
+}
+
+const pullBtn = document.getElementById('pullModelBtn');
+if (pullBtn) pullBtn.addEventListener('click', startPull);
+const installedSelect = document.getElementById('settingsInstalledModels');
+if (installedSelect) installedSelect.addEventListener('change', () => {
+    const localModel = document.getElementById('settingsLocalModel');
+    if (localModel && installedSelect.value) localModel.value = installedSelect.value;
+});
+if (settingsBtn) settingsBtn.addEventListener('click', loadLlmStatus);
+
+// First paint: show LLM readiness immediately, before any chat attempt.
+loadLlmStatus();
