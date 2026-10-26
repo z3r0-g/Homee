@@ -80,7 +80,7 @@ def test_list_agents(client):
     assert resp.status_code == 200
     agents = resp.get_json()["agents"]
     names = {a["name"] for a in agents}
-    assert "Demo System Agent" in names
+    assert "Demo (System Agent)" in names
 
 
 def test_agents_refresh(client):
@@ -89,3 +89,78 @@ def test_agents_refresh(client):
     body = resp.get_json()
     assert body["success"] is True
     assert isinstance(body["agents"], list)
+
+# ── LLM status / pull endpoints (ollama-first) ─────────────────────────
+
+class _FakeOllamaClient:
+    """Minimal ollama.Client stand-in for endpoint tests."""
+
+    def __init__(self, models=(), pull_block=None):
+        self.models = list(models)
+        self.pull_block = pull_block
+        self.pulled = []
+
+    def list(self):
+        return {"models": [{"name": name} for name in self.models]}
+
+    def pull(self, model, stream=False):
+        self.pulled.append(model)
+        if self.pull_block is not None:
+            self.pull_block.wait(timeout=10)
+        if stream:
+            return iter(())
+        return None
+
+
+def _patch_llm_router(monkeypatch):
+    from UI.llm import LLMRouter
+    from UI.routes import settings as settings_routes
+    return settings_routes, LLMRouter
+
+
+def test_llm_status_endpoint(client, monkeypatch):
+    settings_routes, LLMRouter = _patch_llm_router(monkeypatch)
+    monkeypatch.setattr(
+        settings_routes, "llm_router",
+        LLMRouter(client=_FakeOllamaClient(models=["qwen2.5:7b"])))
+    resp = client.get("/api/llm/status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["running"] is True
+    assert data["configured_model_installed"] is True
+    assert data["models"] == ["qwen2.5:7b"]
+
+
+def test_llm_pull_flow(client, monkeypatch):
+    import time
+    settings_routes, LLMRouter = _patch_llm_router(monkeypatch)
+    monkeypatch.setattr(
+        settings_routes, "llm_router",
+        LLMRouter(client=_FakeOllamaClient()))
+    resp = client.post("/api/llm/pull", json={"model": "qwen2.5:7b"})
+    assert resp.status_code == 202
+    deadline = time.time() + 5
+    job = {}
+    while time.time() < deadline:
+        job = client.get("/api/llm/pull").get_json()["job"]
+        if job["state"] in ("done", "error"):
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+    assert job["model"] == "qwen2.5:7b"
+
+
+def test_llm_pull_conflict(client, monkeypatch):
+    import threading
+    settings_routes, LLMRouter = _patch_llm_router(monkeypatch)
+    block = threading.Event()
+    monkeypatch.setattr(
+        settings_routes, "llm_router",
+        LLMRouter(client=_FakeOllamaClient(pull_block=block)))
+    try:
+        first = client.post("/api/llm/pull", json={"model": "qwen2.5:7b"})
+        assert first.status_code == 202
+        second = client.post("/api/llm/pull", json={"model": "llama3.1:8b"})
+        assert second.status_code == 409
+    finally:
+        block.set()

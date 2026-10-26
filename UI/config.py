@@ -34,7 +34,10 @@ DEBUG = os.getenv("UI_DEBUG", "false").lower() == "true"
 
 MCP_SERVICE_URL = os.getenv("MCP_SERVICE_URL", "http://localhost:5002")
 
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5")
+# Must match install.sh's MODEL_NAME (qwen2.5:7b): in Ollama, "qwen2.5"
+# resolves to the :latest tag, which is NOT satisfied by an installed
+# qwen2.5:7b — the mismatch used to break fresh installs at first chat.
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Default settings merged with any on-disk settings

@@ -1,0 +1,159 @@
+"""Tests for the ollama-first LLM router (UI/llm.py).
+
+All Ollama behavior is injected via a fake client; no test touches the
+network or a real Ollama server.
+"""
+
+from __future__ import annotations
+
+import time
+from types import SimpleNamespace
+
+import pytest
+
+from UI.llm import LLMRouter, _model_name_matches
+
+
+class FakeClient:
+    """Minimal stand-in for ollama.Client."""
+
+    def __init__(self, models=(), chat_text="hello", chat_error=None,
+                 list_error=None, pull_block=None):
+        self.models = list(models)
+        self.chat_text = chat_text
+        self.chat_error = chat_error
+        self.list_error = list_error
+        self.pull_block = pull_block
+        self.pulled = []
+        self.last_chat_model = None
+
+    def list(self):
+        if self.list_error is not None:
+            raise self.list_error
+        return {"models": [{"name": name} for name in self.models]}
+
+    def chat(self, model, messages, tools=None):
+        self.last_chat_model = model
+        if self.chat_error is not None:
+            raise self.chat_error
+        return SimpleNamespace(
+            message=SimpleNamespace(role="assistant",
+                                    content=self.chat_text,
+                                    tool_calls=[]))
+
+    def pull(self, model, stream=False):
+        self.pulled.append(model)
+        if self.pull_block is not None:
+            self.pull_block.wait(timeout=10)
+        if stream:
+            return iter(())
+        return None
+
+
+@pytest.fixture
+def _tmp_settings(tmp_path, monkeypatch):
+    """Point settings at a scratch file so defaults apply."""
+    path = tmp_path / "settings.json"
+    monkeypatch.setattr("UI.config.SETTINGS_FILE", path)
+    return path
+
+
+def test_default_local_model_matches_installer(_tmp_settings):
+    # install.sh pulls qwen2.5:7b; the router default must be the same tag,
+    # otherwise a fresh install fails first chat with "model not found".
+    router = LLMRouter(client=FakeClient())
+    assert router.settings["llm"]["local_model"] == "qwen2.5:7b"
+    assert router.settings["llm"]["provider"] == "local"
+
+
+def test_status_offline(_tmp_settings):
+    router = LLMRouter(client=FakeClient(
+        list_error=ConnectionError("Connection refused")))
+    status = router.ollama_status()
+    assert status["running"] is False
+    assert status["models"] == []
+    assert status["configured_model_installed"] is False
+    assert "not reachable" in status["error"]
+
+
+def test_status_reports_installed_configured_model(_tmp_settings):
+    router = LLMRouter(client=FakeClient(models=["qwen2.5:7b", "llama3.1:8b"]))
+    status = router.ollama_status()
+    assert status["running"] is True
+    assert status["models"] == ["llama3.1:8b", "qwen2.5:7b"]
+    assert status["configured_model"] == "qwen2.5:7b"
+    assert status["configured_model_installed"] is True
+
+
+def test_model_name_matching_treats_missing_tag_as_latest():
+    assert _model_name_matches("qwen2.5", "qwen2.5:latest")
+    assert _model_name_matches("qwen2.5:latest", "qwen2.5")
+    assert not _model_name_matches("qwen2.5", "qwen2.5:7b")
+    assert not _model_name_matches("qwen2.5:7b", "qwen2.5:latest")
+
+
+def test_query_local_model_not_found_is_actionable(_tmp_settings):
+    router = LLMRouter(client=FakeClient(
+        chat_error=Exception("model 'qwen2.5:7b' not found, try pulling it")))
+    result = router.query_local([{"role": "user", "content": "hi"}])
+    assert "error" in result
+    assert "ollama pull qwen2.5:7b" in result["message"]["content"]
+
+
+def test_reply_mentioning_error_is_not_a_failure(_tmp_settings):
+    # Regression: the old router treated any reply containing the substring
+    # "error" as a failure and fell back to the other backend.
+    router = LLMRouter(client=FakeClient(
+        chat_text="There is no error here, all good."))
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert "error" not in result
+    assert result["message"]["content"] == "There is no error here, all good."
+
+
+def test_chat_does_not_fall_back_to_unconfigured_remote(_tmp_settings):
+    router = LLMRouter(client=FakeClient(
+        chat_error=Exception("Connection refused")))
+    calls = []
+    router.query_remote = lambda *a, **k: calls.append(1) or {
+        "message": {"role": "assistant", "content": "remote", "tool_calls": []}}
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert calls == []
+    assert "not reachable" in result["message"]["content"]
+
+
+def test_chat_falls_back_to_configured_remote(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"remote_base_url": "https://example.invalid/v1"}}))
+    router = LLMRouter(client=FakeClient(
+        chat_error=Exception("Connection refused")))
+    router.query_remote = lambda *a, **k: {
+        "message": {"role": "assistant", "content": "remote ok",
+                    "tool_calls": []}}
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert result["message"]["content"] == "remote ok"
+
+
+def test_pull_job_lifecycle(_tmp_settings):
+    import threading
+    # Hold the pull thread so the "running" state is observable: a fake
+    # pull otherwise finishes before start_pull() even returns.
+    block = threading.Event()
+    router = LLMRouter(client=FakeClient(pull_block=block))
+    job = router.start_pull("qwen2.5:7b")
+    assert job["state"] == "running"
+    block.set()
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        job = router.pull_job()
+        if job["state"] in ("done", "error"):
+            break
+        time.sleep(0.02)
+    assert job["state"] == "done"
+    assert router._client.pulled == ["qwen2.5:7b"]
+
+
+def test_pull_empty_model_is_an_error(_tmp_settings):
+    router = LLMRouter(client=FakeClient())
+    job = router.start_pull("   ")
+    assert job["state"] == "error"

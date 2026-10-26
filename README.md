@@ -51,6 +51,9 @@
 - `GET /api/mcp/marketplace` — Open MCP marketplace
 - `GET /api/settings` — Get settings (LLM provider, scheduler)
 - `POST /api/settings` — Save settings
+- `GET /api/llm/status` — Ollama reachability, installed models, configured-model readiness
+- `POST /api/llm/pull` — Pull a model in the background (202 + job; 409 if a pull is running)
+- `GET /api/llm/pull` — Current model-pull job state
 - `GET /api/agents` — List available Agent personalities
 - `GET /api/health` — Health check
 
@@ -82,7 +85,19 @@
 - Remote plugins: Git repository URLs in `Agents/sources.json`
 - Plugin base class: `AgentBase` with `execute()` method
 
-## Quick Start
+## Quick Start (Ollama first — no API keys)
+
+Homee works out of the box with local Ollama. No cloud account needed:
+
+1. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
+2. Pull the default model: `ollama pull qwen2.5:7b`
+   (or start the UI first and pull it from **Settings → Models**)
+3. Start the services below and open http://host-ip-or-dns:5001 —
+   the header shows the live Ollama status, and chat works immediately.
+   If Ollama is offline or the model is missing, the header and the chat
+   area say so plainly instead of failing with a cryptic error.
+
+## Quick Start (services)
 
 >Start each service independently
 
@@ -106,6 +121,8 @@ Open browser to http://host-ip-or-dns:5001 (UI) to begin interacting with the pl
 - `MCP_INSTANCES_DIR` — directory for MCP runtime JSON state. Defaults to `MCP/instances`.
 - `MCP_SERVICE_URL` — base URL of the MCP service used by the UI. Defaults to `http://localhost:5002`.
 - `UI_PORT` / `MCP_PORT` — service ports. Defaults to `5001` / `5002`.
+- `OLLAMA_MODEL` — default local model. Defaults to `qwen2.5:7b` (matches `install.sh`).
+- `OLLAMA_HOST` — Ollama server URL. Defaults to `http://localhost:11434`.
 - `UI_START_SCHEDULER` — set to `false` to disable the background scheduler (used in tests).
 - `MCP_KNOWLEDGE_DIR` — directory for MCP knowledge-base files. Defaults to `MCP/instances/knowledge`.
 
