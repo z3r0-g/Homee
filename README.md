@@ -5,12 +5,24 @@
 
 ## Overview
 
+Homee is a simple, self-hosted home for local AI — a simpler alternative to Open WebUI for the house, built for the casual home enthusiast and designed to run on a repurposed Mac Mini. It keeps the loved essentials (chat with bots, tools, scheduled tasks, local Ollama models) and leaves out the clutter: no workspaces, admin panels, or plugin stores. The design rule is simple: if a feature needs a manual, it doesn't ship.
+
 ***WARNING*** This platform was designed with AI coding agents as a key component of the development workflow to provide a comprehensive system for managing AI agent bots on lightweight hardware with the following in mind:
 
 - **Bot Management**: Create, manage, and chat with AI agent bots
 - **MCP Integrations**: Model Context Protocol integrations (GitHub, Google Drive, Microsoft OneDrive)
 - **Agent Plugins**: Loadable agents from local directories or remote Git repositories
 - **Personalities**: Configure agent personalities with skills, abilities, and system prompts
+
+## Features
+
+Five features, done the simple way:
+
+1. **Chat with multiple bots, flip while they work** — Available. Every bot lives in the sidebar with a live status word. Send a message or run a task, switch to another bot, and the first task keeps running in the background; its reply is waiting when you come back. One task per bot at a time, so nothing ever gets dropped or talked over.
+2. **Starter prompts on empty chats** — Available. A new chat suggests up to two openers — the bot's own task prompt, if it has one, and "What can you do?" — so a first-time user never faces a blank box.
+3. **Fast / Smart model switch** — Available. One switch in the composer: Fast answers with your primary local model, Smart with your configured secondary model. No sliders, no temperature, no parameter panels. (Smart is greyed out until a secondary model is set in Settings.)
+4. **Ask about a file** — Coming soon. Attach a document to a chat and its text rides along as context for that conversation — full-content injection, no vector database, no embeddings to run on the Mini.
+5. **Search across chats** — Coming soon. One search box over everything you've asked, replacing folders, tags, and pins entirely.
 
 ## Prerequisites
 
