@@ -48,6 +48,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "remote_base_url": "",
         "remote_api_key": "",
         "remote_model": "gpt-4o-mini",
+        "mode": "local_local",         # "local_local" | "local_cloud" | "local_remote_local"
+        "secondary_model": "",         # secondary model for dual-mode configs
+        "secondary_base_url": "",      # secondary remote base URL (for cloud or remote local)
+        "secondary_api_key": "",       # secondary API key (for cloud mode)
     },
     "scheduler": {
         "enabled": True,

@@ -74,6 +74,41 @@ def create_ui_app() -> Flask:
         _scheduler = BotScheduler(on_run=_run_scheduled_bot)
         _scheduler.start()
 
+    # Sanitize Permissions-Policy: drop unrecognized Privacy Sandbox / ad features
+    # that Chrome reports as "Unrecognized feature" warnings (run-ad-auction,
+    # join-ad-interest-group, private-aggregation, attribution-reporting).
+    @app.after_request
+    def _permissions_policy(resp):
+        resp.headers["Permissions-Policy"] = (
+            "accelerometer=(), "
+            "ambient-light-sensor=(), "
+            "autoplay=(), "
+            "battery=(), "
+            "camera=(), "
+            "display-capture=(), "
+            "document-domain=(), "
+            "encrypted-media=(), "
+            "execution-while-not-rendered=(), "
+            "execution-while-out-of-viewport=(), "
+            "geolocation=(), "
+            "gyroscope=(), "
+            "keyboard-map=(), "
+            "magnetometer=(), "
+            "microphone=(), "
+            "midi=(), "
+            "navigation-override=(), "
+            "payment=(), "
+            "picture-in-picture=(), "
+            "publickey-credentials-get=(), "
+            "screen-wake-lock=(), "
+            "serial=(), "
+            "sync-xhr=(), "
+            "usb=(), "
+            "web-share=(), "
+            "xr-spatial-tracking=()"
+        )
+        return resp
+
     return app
 
 

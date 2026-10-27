@@ -19,7 +19,6 @@ const chatArea = document.getElementById('chatArea');
 const newBotBtn = document.getElementById('newBotBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const personalityModal = document.getElementById('personalityModal');
-const marketplaceModal = document.getElementById('marketplaceModal');
 const settingsModal = document.getElementById('settingsModal');
 const newBotModal = document.getElementById('newBotModal');
 const closeModalBtns = document.querySelectorAll('.close-modal');
@@ -27,6 +26,10 @@ const personalityForm = document.getElementById('personalityForm');
 const newBotForm = document.getElementById('newBotForm');
 const settingsForm = document.getElementById('settingsForm');
 const marketplaceGrid = document.getElementById('marketplaceGrid');
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
+const modeOptions = document.getElementById('modeOptions');
+const settings_llmMode = document.querySelector('input[name="llmMode"]');
 
 // Initialize
 async function init() {
@@ -34,6 +37,8 @@ async function init() {
     await loadPersonalitiesForNewBot();
     await loadSettings();
     await loadMarketplace();
+    setupTabNavigation();
+    renderModeSelector();
 }
 
 // Load bots from API
@@ -371,6 +376,13 @@ async function loadSettings() {
         const settings = await response.json();
         document.getElementById('settingsLlmProvider').value = settings.llm?.provider || 'local';
         document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5:7b';
+        
+        // Load LLM mode
+        if (settings.llm?.mode) {
+            const modeSelect = document.querySelector('input[name="llmMode"]');
+            if (modeSelect) modeSelect.value = settings.llm.mode;
+        }
+        
         loadLlmStatus();
         document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
         document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
@@ -397,6 +409,13 @@ async function saveSettings() {
             tick_seconds: parseInt(document.getElementById('settingsSchedulerTick').value) || 30,
         },
     };
+    
+    // Get the selected LLM mode
+    const modeSelect = document.querySelector('input[name="llmMode"]');
+    if (modeSelect) {
+        settings.llm.mode = modeSelect.value;
+    }
+    
     const response = await fetch(`${API_BASE}/api/settings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -619,5 +638,294 @@ if (installedSelect) installedSelect.addEventListener('change', () => {
 });
 if (settingsBtn) settingsBtn.addEventListener('click', loadLlmStatus);
 
+// Setup tab navigation
+function setupTabNavigation() {
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Update active tab button
+            tabBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Show corresponding tab content
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === 'tab-' + btn.dataset.tab) {
+                    content.classList.add('active');
+                }
+            });
+        });
+    });
+}
+
+// Render LLM mode selector with 3-box switch control
+async function renderModeSelector() {
+    if (!modeOptions) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/settings/modes`);
+        const data = await response.json();
+        const modes = Object.entries(data.modes || {});
+        const currentMode = data.current_mode || 'local_local';
+
+        // Set current mode in settings
+        if (settings_llmMode) settings_llmMode.value = currentMode;
+
+        let html = '';
+        modes.forEach(([key, mode]) => {
+            const isActive = key === currentMode;
+            // Determine color class based on mode type
+            let colorClass = '';
+            if (key === 'local_local') colorClass = 'mode-switch-local_local';
+            if (key === 'local_cloud') colorClass = 'mode-switch-local_cloud';
+            if (key === 'local_remote_local') colorClass = 'mode-switch-local_remote_local';
+
+            html += `
+                <div class="mode-switch ${isActive ? 'mode-switch-active' : 'mode-switch-inactive'} ${colorClass}" data-mode="${key}">
+                    <span class="mode-switch-label">${mode.name}</span>
+                    <span class="mode-switch-description">${mode.description}</span>
+                </div>
+            `;
+        });
+
+        modeOptions.innerHTML = html;
+
+        // Add click listeners
+        modeOptions.querySelectorAll(".mode-switch:not(.mode-switch-inactive)").forEach(switchEl => {
+            switchEl.addEventListener("click", () => {
+                const modeKey = switchEl.dataset.mode;
+                if (settings_llmMode) settings_llmMode.value = modeKey;
+
+                // Update UI based on mode
+                updateModeUI(modeKey);
+
+                // Save mode
+                saveMode(modeKey);
+
+                // Reset other switches to inactive, activate clicked
+                modeOptions.querySelectorAll(".mode-switch").forEach(s => s.classList.remove("mode-switch-active"));
+                modeOptions.querySelectorAll(".mode-switch-inactive").forEach(s => s.classList.add("mode-switch-inactive"));
+                switchEl.classList.add("mode-switch-active");
+                switchEl.classList.remove("mode-switch-inactive");
+            });
+        });
+
+    } catch (e) {
+        console.warn("Failed to load modes", e);
+        modeOptions.innerHTML = '<p style="color: var(--color-muted);">Failed to load mode configurations.</p>';
+    }
+}
+
+
+function updateModeUI(modeKey) {
+    const modeConfigs = {
+        local_local: {
+            secondaryLabel: 'Secondary Model (optional)',
+            secondaryPlaceholder: 'e.g. qwen2.5:7b',
+            showRemote: false,
+            showSecondaryModel: true
+        },
+        local_cloud: {
+            secondaryLabel: 'Cloud API Key',
+            secondaryPlaceholder: 'Enter API key',
+            showRemote: true,
+            showSecondaryModel: true
+        },
+        local_remote_local: {
+            secondaryLabel: 'Remote Ollama URL',
+            secondaryPlaceholder: 'http://localhost:11434',
+            showRemote: true,
+            showSecondaryModel: false
+        }
+    };
+    
+    const cfg = modeConfigs[modeKey] || modeConfigs.local_local;
+    
+    // Update remote fields visibility
+    const remoteGroup = document.querySelector('div.form-group:has(label:contains("Remote Base URL"))');
+    if (remoteGroup) {
+        if (cfg.showRemote) {
+            remoteGroup.style.display = 'block';
+        } else {
+            remoteGroup.style.display = 'none';
+        }
+    }
+}
+
+async function saveMode(mode) {
+    try {
+        await fetch(`${API_BASE}/api/settings/modes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+    } catch (e) {
+        console.warn('Failed to save mode', e);
+    }
+}
+
 // First paint: show LLM readiness immediately, before any chat attempt.
 loadLlmStatus();
+
+// Render MCP Marketplace
+async function renderMCPMarketplace() {
+    if (!marketplaceGrid) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/mcp/list`);
+        const data = await response.json();
+        const mcps = data.mcps || [];
+
+        let html = '';
+        mcps.forEach(mcp => {
+            const isRemote = mcp.type === 'remote';
+            const badgeClass = isRemote ? 'mcp-badge-remote' : 'mcp-badge-local';
+            const badgeText = isRemote ? 'Remote' : 'Local';
+
+            html += '\n                <div class="mcp-card" data-mcp-id="' + mcp.id + '">';
+            html += '\n                    <div class="mcp-header">';
+            html += '\n                        <span class="mcp-name">' + mcp.name + '</span>';
+            html += '\n                        <span class="mcp-badge ' + badgeClass + '">' + badgeText + '</span>';
+            html += '\n                    </div>';
+            html += '\n                    <div class="mcp-description">' + (mcp.description || '') + '</div>';
+            html += '\n                    <div class="mcp-actions">';
+            html += '\n                        <button class="btn-icon" onclick="importMCP(' + mcp.id + '" title="Import">&#8671;</button>';
+            html += '\n                        <button class="btn-icon" onclick="disableMCP(' + mcp.id + '" title="Disable">&#10006;</button>';
+            html += '\n                    </div>';
+            html += '\n                </div>\n';
+        });
+
+        if (html === '') {
+            html = '<p style="color: var(--color-muted);">No MCPs found. Add new MCP below.</p>';
+        }
+
+        marketplaceGrid.innerHTML = html;
+
+        document.querySelectorAll('.mcp-card').forEach(card => {
+            card.addEventListener('click', () => {
+                card.classList.toggle('selected');
+            });
+        });
+
+    // Render Agent Personalities
+async function renderAgentPersonalities() {
+    const personalityList = document.getElementById('personalityList');
+    if (!personalityList) return;
+
+    try {
+        const envResponse = await fetch(`${API_BASE}/api/env/vars?prefix=AGENT_`);
+        const envData = await envResponse.json();
+        const agentVars = envData.vars || {};
+
+        const agentsResponse = await fetch(`${API_BASE}/api/agents/active`);
+        const agentsData = await agentsResponse.json();
+        const activeAgents = agentsData.agents || [];
+
+        let html = '';
+
+        if (activeAgents.length > 0) {
+            html += '<h4>Active Agents</h4>';
+            html += '<div class="agent-item">';
+            activeAgents.forEach(agent => {
+                html += '\n                    <div class="agent-card" data-agent-id="' + agent.id + '">';
+                html += '\n                        <div class="agent-header">';
+                html += '\n                            <span class="agent-name">' + agent.name + '</span>';
+                html += '\n                            <span class="agent-status ' + (agent.status === 'active' ? 'status-active' : 'status-inactive') + '">' + agent.status + '</span>';
+                html += '\n                        </div>';
+                html += '\n                        <div class="agent-controls">';
+                html += '\n                            <button class="btn-icon" onclick="toggleAgent(' + agent.id + '" title="' + (agent.status === 'active' ? 'Disable' : 'Enable') + '">';
+                html += '\n                                <span>' + (agent.status === 'active' ? '&#10006;' : '&#10003;') + '</span>';
+                html += '\n                            </button>';
+                html += '\n                            <button class="btn-icon" onclick="importAgentGit(' + agent.id + '" title="Import from Git">&#8635;</button>';
+                html += '\n                        </div>';
+                html += '\n                    </div>\n';
+            });
+            html += '</div>';
+        }
+
+        if (Object.keys(agentVars).length > 0) {
+            html += '<h4>Personalities from Environment</h4>';
+            html += '<div class="personality-item">';
+            Object.entries(agentVars).forEach(([key, value]) => {
+                const name = key.replace('AGENT_', '').replace(/_/g, ' ');
+                html += '\n                    <div class="personality-card" data-personality-key="' + key + '">';
+                html += '\n                        <span class="personality-name">' + name + '</span>';
+                html += '\n                        <span class="personality-value">' + value.substring(0, 50) + (value.length > 50 ? '...' : '') + '</span>';
+                html += '\n                        <button class="btn-secondary small" onclick="disableAgentPersonality(' + key + ')">Disable</button>';
+                html += '\n                    </div>\n';
+            });
+            html += '</div>';
+        }
+
+        personalityList.innerHTML = html;
+        addPersonalityListeners();
+    } catch (e) {
+        console.warn('Failed to load agent personalities', e);
+        personalityList.innerHTML = '<p style="color: var(--color-muted);">Failed to load agent personalities.</p>';
+    }
+}
+
+// Toggle agent active/inactive
+async function toggleAgent(agentId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/agents/toggle/${agentId}`, { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+            renderAgentPersonalities();
+        }
+    } catch (e) {
+        console.warn('Failed to toggle agent', e);
+    }
+}
+
+// Disable agent personality from env var
+async function disableAgentPersonality(varKey) {
+    if (confirm('Disable this agent personality?')) {
+        try {
+            const response = await fetch(`${API_BASE}/api/env/disable/${varKey}`, { method: 'POST' });
+            const result = await response.json();
+            if (result.success) {
+                renderAgentPersonalities();
+            }
+        } catch (e) {
+            console.warn('Failed to disable agent personality', e);
+        }
+    }
+}
+
+// Import agent from remote git source
+async function importAgentGit(agentId) {
+    if (confirm('Import agent configuration from remote git source?')) {
+        try {
+            const response = await fetch(`${API_BASE}/api/agents/import-git/${agentId}`, { method: 'POST' });
+            const result = await response.json();
+            if (result.success) {
+                alert('Agent imported from Git successfully');
+                renderAgentPersonalities();
+            } else {
+                alert('Failed to import from Git: ' + (result.error || ''));
+            }
+        } catch (e) {
+            console.warn('Failed to import agent from Git', e);
+            alert('Failed to import from Git');
+        }
+    }
+}
+
+// Add event listeners for personality controls
+function addPersonalityListeners() {
+    document.querySelectorAll('.personality-card .btn-secondary').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const card = btn.closest('.personality-card');
+            const key = card.dataset.personalityKey;
+            if (key) {
+                disableAgentPersonality(key);
+            }
+        });
+    });
+}
+
+// Initialize MCP and Personalities
+async function initMCPAndPersonalities() {
+    await renderMCPMarketplace();
+    await renderAgentPersonalities();
+}

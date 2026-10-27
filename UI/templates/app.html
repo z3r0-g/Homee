@@ -118,17 +118,6 @@
         </div>
     </div>
 
-    <!-- MARKETPLACE MODAL -->
-    <div id="marketplaceModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Marketplace</h3>
-                <span class="close-modal">&times;</span>
-            </div>
-            <div id="marketplaceGrid" class="marketplace-grid"></div>
-        </div>
-    </div>
-
     <!-- SETTINGS MODAL -->
     <div id="settingsModal" class="modal">
         <div class="modal-content">
@@ -136,54 +125,82 @@
                 <h3>Settings</h3>
                 <span class="close-modal">&times;</span>
             </div>
-            <form id="settingsForm">
-                <div class="form-group">
-                    <label>LLM Provider</label>
-                    <select id="settingsLlmProvider">
-                        <option value="local">Local Ollama</option>
-                        <option value="remote">Remote Cloud LLM</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Local Model</label>
-                    <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
-                </div>
-                <div class="form-group">
-                    <label>Installed Ollama Models</label>
-                    <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
-                    <select id="settingsInstalledModels">
-                        <option value="">(no models detected)</option>
-                    </select>
-                    <div class="form-row">
-                        <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
-                        <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
+
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="llm">LLM Provider</button>
+                <button class="tab-btn" data-tab="mcp">MCP Marketplace</button>
+                <button class="tab-btn" data-tab="personalities">Agent Personalities</button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="tab-content active" id="tab-llm">
+                <form id="settingsForm">
+                    <!-- LLM Mode Selector -->
+                    <div class="form-group">
+                        <label>LLM Mode</label>
+                        <div id="modeOptions" class="mode-switches">
+                            <!-- Populated by JavaScript -->
+                        </div>
                     </div>
-                    <div id="pullStatus" class="llm-status"></div>
-                </div>
+
+                    <hr style="margin: 16px 0; border-color: var(--color-border);">
+
+                    <div class="form-group">
+                        <label>Local Model</label>
+                        <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
+                    </div>
+                    <div class="form-group">
+                        <label>Installed Ollama Models</label>
+                        <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
+                        <select id="settingsInstalledModels">
+                            <option value="">(no models detected)</option>
+                        </select>
+                        <div class="form-row">
+                            <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
+                            <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
+                        </div>
+                        <div id="pullStatus" class="llm-status"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>Remote Base URL</label>
+                        <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                    </div>
+                    <div class="form-group">
+                        <label>Remote API Key</label>
+                        <input type="password" id="settingsRemoteApiKey" autocomplete="current-password">
+                    </div>
+                    <div class="form-group">
+                        <label>Remote Model</label>
+                        <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="settingsSchedulerEnabled" checked>
+                            Scheduler Enabled
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>Scheduler Tick (seconds)</label>
+                        <input type="number" id="settingsSchedulerTick" value="30" min="5">
+                    </div>
+                    <button type="submit" class="btn-save">Save Settings</button>
+                </form>
+            </div>
+
+            <div class="tab-content" id="tab-mcp">
                 <div class="form-group">
-                    <label>Remote Base URL</label>
-                    <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                    <label>MCP Marketplace</label>
+                    <div id="marketplaceGrid" class="marketplace-grid"></div>
                 </div>
+            </div>
+
+            <div class="tab-content" id="tab-personalities">
                 <div class="form-group">
-                    <label>Remote API Key</label>
-                    <input type="password" id="settingsRemoteApiKey">
+                    <label>Agent Personalities</label>
+                    <div id="personalityList" class="personality-list"></div>
                 </div>
-                <div class="form-group">
-                    <label>Remote Model</label>
-                    <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
-                </div>
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="settingsSchedulerEnabled" checked>
-                        Scheduler Enabled
-                    </label>
-                </div>
-                <div class="form-group">
-                    <label>Scheduler Tick (seconds)</label>
-                    <input type="number" id="settingsSchedulerTick" value="30" min="5">
-                </div>
-                <button type="submit" class="btn-save">Save Settings</button>
-            </form>
+            </div>
         </div>
     </div>
 
