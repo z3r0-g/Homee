@@ -382,3 +382,53 @@ def test_chat_passes_model_override(client, monkeypatch):
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hi"})
     assert resp.status_code == 200
     assert seen["model"] is None
+
+
+def test_chat_attachment_context_not_persisted(client, monkeypatch):
+    import UI.routes.bots as bots_routes
+
+    seen = {}
+
+    class _StubRouter:
+        def chat(self, messages, model=None):
+            seen["messages"] = messages
+            return {"message": {"content": "based on the file"}}
+
+    monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
+    resp = client.post("/api/bots", json={"name": "File Bot", "enabled": True})
+    bot_id = resp.get_json()["bot"]["id"]
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={
+        "message": "what does it say?",
+        "attachments": [{"name": "notes.txt", "content": "the garden needs water"}],
+    })
+    assert resp.status_code == 200
+    systems = [m for m in seen["messages"] if m["role"] == "system"]
+    assert any("notes.txt" in m["content"] and "the garden needs water" in m["content"]
+               for m in systems)
+    # Attachment context must not land in persisted history.
+    history = client.get(f"/api/bots/{bot_id}").get_json()["conversation_history"]
+    assert len(history) == 2
+    assert all("the garden needs water" not in m["content"] for m in history)
+
+
+def test_search_across_chats(client, monkeypatch):
+    import UI.routes.bots as bots_routes
+
+    class _StubRouter:
+        def chat(self, messages, model=None):
+            return {"message": {"content": "ok"}}
+
+    monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
+    resp = client.post("/api/bots", json={"name": "Garden Bot", "enabled": True})
+    bot_id = resp.get_json()["bot"]["id"]
+    client.post(f"/api/bots/{bot_id}/chat", json={"message": "how is my garden doing?"})
+    resp = client.get("/api/bots/search?q=garden")
+    assert resp.status_code == 200
+    results = resp.get_json()["results"]
+    assert len(results) >= 1
+    assert results[0]["bot_id"] == bot_id
+    assert "garden" in results[0]["snippet"].lower()
+    resp = client.get("/api/bots/search?q=zzzznope")
+    assert resp.get_json()["results"] == []
+    resp = client.get("/api/bots/search")
+    assert resp.get_json()["results"] == []

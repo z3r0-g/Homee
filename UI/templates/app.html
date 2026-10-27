@@ -22,6 +22,10 @@
             <div class="sidebar-header">
                 <h2>Bots</h2>
             </div>
+            <div class="sidebar-search">
+                <input type="text" id="chatSearchInput" placeholder="Search chats…" aria-label="Search chats">
+                <div id="chatSearchResults"></div>
+            </div>
             <div class="sidebar-content" id="botList"></div>
             <div class="sidebar-footer">
                 <button class="btn-new-bot" id="newBotBtn">+ New Bot</button>
@@ -40,6 +44,8 @@
             </div>
         </main>
     </div>
+
+    <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg" style="display:none">
 
     <!-- CREATE BOT MODAL -->
     <div id="newBotModal" class="modal">

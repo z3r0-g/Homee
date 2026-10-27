@@ -5,6 +5,7 @@ let globalBots = [];
 let currentBotId = null;
 let currentSettings = null;
 let chatModelChoice = 'fast'; // 'fast' (primary) | 'smart' (secondary)
+let attachedFile = null; // { name, content } for the open chat view only
 const botBusy = {}; // botId -> in-flight op count
 
 function formatElapsed(ms) {
@@ -326,6 +327,7 @@ async function openBotChat(botId) {
     const bot = globalBots.find(b => b.id === botId);
     if (!bot) return;
     currentBotId = botId;
+    attachedFile = null;
 
     // Display name: add "Bot" suffix unless name already ends in "Bot" or "bot"
     const name = bot.name;
@@ -391,6 +393,7 @@ async function openBotChat(botId) {
     formDiv.innerHTML = `
         <input type="text" id="userMessage" class="chat-input" placeholder="Type a message..." />
         ${switchHtml}
+        <button type="button" class="btn-secondary small" id="attachFileBtn" title="Attach a text file" aria-label="Attach a file">📎</button>
         <button class="btn-save">Send</button>
         <button id="runTaskBtn" class="btn-run-task">Run Task</button>
     `;
@@ -410,6 +413,12 @@ async function openBotChat(botId) {
         chatModelChoice = btn.dataset.modelChoice;
         formDiv.querySelectorAll('[data-model-choice]').forEach(b => b.classList.toggle('active', b === btn));
     }));
+
+    const attachBtn = document.getElementById('attachFileBtn');
+    if (attachBtn) attachBtn.addEventListener('click', () => {
+        const fileInput = document.getElementById('fileAttachInput');
+        if (fileInput) fileInput.click();
+    });
 
     formDiv.querySelector('.btn-save').addEventListener('click', () => sendMessage(input, botId));
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(input, botId); });
@@ -464,6 +473,7 @@ async function sendMessageText(botId, message, input) {
     setBotBusy(botId, true);
     try {
         const body = { message };
+        if (attachedFile) body.attachments = [{ name: attachedFile.name, content: attachedFile.content }];
         const model = chatModelForSend();
         if (model) body.model = model;
         const response = await fetch(`${API_BASE}/api/bots/${botId}/chat`, {
@@ -781,6 +791,97 @@ if (chatArea) chatArea.addEventListener('click', (e) => {
     else if (action === 'enable') enableBot(id);
     else if (action === 'edit') openEditBot(id);
 });
+
+// Ask about a file: one text file per chat view, read client-side and
+// sent along as context with every message while the view is open.
+// The file is never stored server-side and never lands in history;
+// switching bots or reloading drops it (openBotChat resets it).
+const MAX_ATTACH_CHARS = 100_000;
+
+function renderAttachedChip() {
+    let bar = document.getElementById('attachedFileBar');
+    if (!attachedFile) {
+        if (bar) bar.remove();
+        return;
+    }
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'attachedFileBar';
+        bar.className = 'attached-file-bar';
+        const composer = document.querySelector('.chat-composer');
+        if (composer) composer.before(bar);
+        else return;
+    }
+    bar.innerHTML = `<span>Attached: ${escapeHtml(attachedFile.name)} (${attachedFile.content.length.toLocaleString()} chars)</span> <button type="button" class="btn-secondary small" id="detachFileBtn" aria-label="Remove attachment">×</button>`;
+    document.getElementById('detachFileBtn').addEventListener('click', () => {
+        attachedFile = null;
+        renderAttachedChip();
+    });
+}
+
+const fileAttachInput = document.getElementById('fileAttachInput');
+if (fileAttachInput) fileAttachInput.addEventListener('change', () => {
+    const file = fileAttachInput.files[0];
+    fileAttachInput.value = '';
+    if (!file) return;
+    if (file.size > MAX_ATTACH_CHARS) {
+        alert('That file is too large to attach (100,000 character limit).');
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+        const text = String(reader.result || '');
+        if (text.includes('\0')) {
+            alert('Only text files can be attached.');
+            return;
+        }
+        attachedFile = { name: file.name, content: text.slice(0, MAX_ATTACH_CHARS) };
+        renderAttachedChip();
+    };
+    reader.onerror = () => alert('Could not read that file.');
+    reader.readAsText(file);
+});
+
+// Search across chats: one box, substring over all bots' history.
+// Debounced; a result opens that bot's chat on click.
+let chatSearchTimer = null;
+const chatSearchInput = document.getElementById('chatSearchInput');
+const chatSearchResults = document.getElementById('chatSearchResults');
+if (chatSearchInput && chatSearchResults) {
+    chatSearchInput.addEventListener('input', () => {
+        clearTimeout(chatSearchTimer);
+        const query = chatSearchInput.value.trim();
+        if (!query) {
+            chatSearchResults.innerHTML = '';
+            return;
+        }
+        chatSearchTimer = setTimeout(async () => {
+            try {
+                const response = await fetch(`${API_BASE}/api/bots/search?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                const results = data.results || [];
+                if (!results.length) {
+                    chatSearchResults.innerHTML = '<p class="search-empty">No matches.</p>';
+                    return;
+                }
+                chatSearchResults.innerHTML = results.map(r => `
+                    <div class="search-result" data-bot-id="${escapeHtml(r.bot_id)}">
+                        <span class="search-result-bot">${escapeHtml(r.bot_name)}</span>
+                        <span class="search-result-role">${escapeHtml(r.role)}</span>
+                        <span class="search-result-text">${escapeHtml(r.snippet)}</span>
+                    </div>
+                `).join('');
+                chatSearchResults.querySelectorAll('.search-result').forEach(el => el.addEventListener('click', () => {
+                    chatSearchInput.value = '';
+                    chatSearchResults.innerHTML = '';
+                    openBotChat(el.dataset.botId);
+                }));
+            } catch (e) {
+                console.warn('Chat search failed', e);
+            }
+        }, 250);
+    });
+}
 
 // Status pill opens Settings (it reports what Settings configures).
 const llmStatusPill = document.getElementById('llmStatusPill');

@@ -1023,3 +1023,85 @@ textarea:focus-visible {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ==========================================================
+   Sidebar chat search + attached-file chip
+   ========================================================== */
+
+.sidebar-search {
+    padding: 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.sidebar-search input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+#chatSearchResults {
+    max-height: 240px;
+    overflow-y: auto;
+    margin-top: 8px;
+}
+
+.search-result {
+    padding: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.search-result:hover {
+    background: var(--color-surface-2);
+}
+
+.search-result-bot {
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.search-result-role {
+    font-size: 0.7rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+}
+
+.search-result-text {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    word-break: break-word;
+}
+
+.search-empty {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    margin: 8px 0 0;
+}
+
+/* Attached-file chip above the composer. */
+.attached-file-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--color-muted);
+}
+
+.attached-file-bar span {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

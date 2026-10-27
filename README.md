@@ -21,8 +21,8 @@ Five features, done the simple way:
 1. **Chat with multiple bots, flip while they work** — Available. Every bot lives in the sidebar with a live status word. Send a message or run a task, switch to another bot, and the first task keeps running in the background; its reply is waiting when you come back. One task per bot at a time, so nothing ever gets dropped or talked over.
 2. **Starter prompts on empty chats** — Available. A new chat suggests up to two openers — the bot's own task prompt, if it has one, and "What can you do?" — so a first-time user never faces a blank box.
 3. **Fast / Smart model switch** — Available. One switch in the composer: Fast answers with your primary local model, Smart with your configured secondary model. No sliders, no temperature, no parameter panels. (Smart is greyed out until a secondary model is set in Settings.)
-4. **Ask about a file** — Coming soon. Attach a document to a chat and its text rides along as context for that conversation — full-content injection, no vector database, no embeddings to run on the Mini.
-5. **Search across chats** — Coming soon. One search box over everything you've asked, replacing folders, tags, and pins entirely.
+4. **Ask about a file** — Available. Attach a text file to a chat (paperclip in the composer) and its text rides along as context for that conversation — full-content injection, no vector database, no embeddings to run on the Mini. Attachments live in the open chat view only: switching bots or reloading drops them, and they never land in saved history.
+5. **Search across chats** — Available. One search box in the sidebar over everything you've asked, replacing folders, tags, and pins entirely. Click a match to open that bot's chat.
 
 ## Prerequisites
 

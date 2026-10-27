@@ -65,6 +65,40 @@ def create_bot():
     return jsonify({"success": True, "bot": bot.to_dict()}), 201
 
 
+@bots_bp.route("/api/bots/search", methods=["GET"])
+def search_bots():
+    """Substring search across all bots' conversation history.
+
+    One search box replaces folders/tags/pins. Returns up to 30 matches
+    with a snippet around the hit; an empty query returns nothing.
+    """
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"query": "", "results": []})
+    needle = query.lower()
+    results = []
+    bots_repo.load()
+    for bot in bots_repo.all():
+        for msg in bot.conversation_history or []:
+            content = str(msg.get("content", ""))
+            idx = content.lower().find(needle)
+            if idx < 0:
+                continue
+            start = max(0, idx - 60)
+            end = min(len(content), idx + len(query) + 60)
+            snippet = ("…" if start > 0 else "") + content[start:end] + ("…" if end < len(content) else "")
+            results.append({
+                "bot_id": bot.id,
+                "bot_name": bot.name,
+                "role": msg.get("role", ""),
+                "snippet": snippet,
+                "timestamp": msg.get("timestamp"),
+            })
+            if len(results) >= 30:
+                return jsonify({"query": query, "results": results})
+    return jsonify({"query": query, "results": results})
+
+
 @bots_bp.route("/api/bots/<bot_id>", methods=["GET"])
 def get_bot(bot_id):
     bots_repo.load()
@@ -132,11 +166,22 @@ def chat_bot(bot_id):
     # Only the model is overridable; the provider stays as configured.
     model = data.get("model") or None
 
+    # Optional attached file context (ask-about-a-file): text only,
+    # capped server-side, injected into this turn's messages but never
+    # persisted to conversation_history.
+    attachment_text = ""
+    for att in data.get("attachments") or []:
+        if isinstance(att, dict) and att.get("content"):
+            attachment_text += f"\n\nFile: {str(att.get('name', 'file'))[:200]}\n{str(att['content'])[:50_000]}"
+    attachment_text = attachment_text[:100_000]
+
     sent_at = _iso()
     personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
     system_prompt = personality.system_prompt if personality else ""
 
     messages = [{"role": "system", "content": system_prompt}]
+    if attachment_text.strip():
+        messages.append({"role": "system", "content": "The user attached file(s) for this chat. Use their contents to answer questions about them." + attachment_text})
     messages.extend(bot.conversation_history[-20:])
     messages.append({"role": "user", "content": user_message})
 
