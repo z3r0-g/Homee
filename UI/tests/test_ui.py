@@ -432,3 +432,40 @@ def test_search_across_chats(client, monkeypatch):
     assert resp.get_json()["results"] == []
     resp = client.get("/api/bots/search")
     assert resp.get_json()["results"] == []
+
+
+def test_mcp_status_running(client, monkeypatch):
+    import requests
+
+    class _Resp:
+        def __init__(self, status_code, payload):
+            self.status_code = status_code
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def fake_get(url, timeout=None):
+        if url.endswith("/api/health"):
+            return _Resp(200, {"status": "ok", "service": "mcp"})
+        if url.endswith("/api/mcps"):
+            return _Resp(200, {"mcps": [{"id": "a"}, {"id": "b"}]})
+        raise AssertionError(url)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    resp = client.get("/api/mcp/status")
+    assert resp.status_code == 200
+    assert resp.get_json() == {"running": True, "count": 2}
+
+
+def test_mcp_status_offline(client, monkeypatch):
+    import requests
+
+    def fake_get(url, timeout=None):
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    resp = client.get("/api/mcp/status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["running"] is False

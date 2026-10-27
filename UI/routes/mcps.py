@@ -138,3 +138,31 @@ def mcp_disable(mcp_id):
 @mcps_bp.route("/api/mcp/execute/<mcp_id>", methods=["POST"])
 def execute_mcp(mcp_id):
     return _proxy("POST", f"/api/mcp/execute/{mcp_id}", request.get_json(silent=True) or {})
+
+@mcps_bp.route("/api/mcp/status", methods=["GET"])
+def mcp_status():
+    """Liveness + server count for the header MCP pill.
+
+    Pings the MCP service's /api/health with short timeouts: a dead
+    service must not hang the header check the way _proxy's 30s would.
+    The count is best-effort — liveness is what the pill reports.
+    """
+    import requests as _req
+
+    try:
+        health = _req.get(f"{MCP_SERVICE_URL}/api/health", timeout=2)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"running": False, "error": f"MCP service unreachable: {e}"})
+    if health.status_code != 200:
+        return jsonify({"running": False, "error": f"MCP service unhealthy: HTTP {health.status_code}"})
+    count = None
+    try:
+        resp = _req.get(f"{MCP_SERVICE_URL}/api/mcps", timeout=2)
+        data = resp.json()
+        if isinstance(data, list):
+            count = len(data)
+        elif isinstance(data, dict) and isinstance(data.get("mcps"), list):
+            count = len(data["mcps"])
+    except Exception:  # noqa: BLE001 - count is best-effort
+        pass
+    return jsonify({"running": True, "count": count})

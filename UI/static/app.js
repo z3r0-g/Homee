@@ -556,6 +556,7 @@ async function loadSettings() {
         }
         
         loadLlmStatus();
+        loadMcpStatus();
         document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
         document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
         document.getElementById('settingsRemoteModel').value = settings.llm?.remote_model || 'gpt-4o-mini';
@@ -890,6 +891,14 @@ if (llmStatusPill) llmStatusPill.addEventListener('click', () => {
     settingsModal.classList.add('active');
 });
 
+// MCP pill mirrors it, landing on the MCP tab instead of the default one.
+const mcpStatusPill = document.getElementById('mcpStatusPill');
+if (mcpStatusPill) mcpStatusPill.addEventListener('click', () => {
+    loadSettings();
+    settingsModal.classList.add('active');
+    document.querySelector('.tab-btn[data-tab="mcp"]')?.click();
+});
+
 // Initialize application
 init();
 // ── LLM status (Ollama) ──────────────────────────────────────────────
@@ -1014,6 +1023,26 @@ async function loadLlmStatus() {
     } catch (e) {
         if (pill) { pill.textContent = 'LLM status unknown'; pill.className = 'header-status warn'; }
         console.warn('Failed to load LLM status', e);
+    }
+}
+
+// ── MCP status (mirrors the LLM pill) ──────────────────────────────────
+async function loadMcpStatus() {
+    const pill = document.getElementById('mcpStatusPill');
+    if (!pill) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/mcp/status`);
+        const status = await response.json();
+        if (!status.running) {
+            pill.textContent = 'MCP offline'; pill.className = 'header-status bad';
+        } else if (typeof status.count === 'number') {
+            pill.textContent = `MCP · ${status.count} server${status.count === 1 ? '' : 's'}`; pill.className = 'header-status ok';
+        } else {
+            pill.textContent = 'MCP · running'; pill.className = 'header-status ok';
+        }
+    } catch (e) {
+        pill.textContent = 'MCP status unknown'; pill.className = 'header-status warn';
+        console.warn('Failed to load MCP status', e);
     }
 }
 
@@ -1242,6 +1271,7 @@ if (pullModalClose) pullModalClose.addEventListener('click', () => {
 });
 
 if (settingsBtn) settingsBtn.addEventListener('click', loadLlmStatus);
+if (settingsBtn) settingsBtn.addEventListener('click', loadMcpStatus);
 
 // Setup tab navigation
 function setupTabNavigation() {
