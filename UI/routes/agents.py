@@ -178,3 +178,16 @@ def _import_remote_personalities() -> int:
     if count:
         personalities_repo.save()
     return count
+
+@agents_bp.route("/api/skills/leaderboard", methods=["GET"])
+def skills_leaderboard():
+    """Top Agent Skills from the MCP Market leaderboard snapshot.
+    Discovery only: entries carry no repo URL, so cards link out
+    to the leaderboard instead of importing."""
+    from ..leaderboard import load_leaderboard
+    snap = load_leaderboard("skills")
+    return jsonify({
+        "skills": snap.get("entries", []),
+        "snapshot_date": snap.get("snapshot_date", ""),
+        "source_url": snap.get("source_url", ""),
+    })

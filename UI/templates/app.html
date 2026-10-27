@@ -279,37 +279,40 @@
             </div>
 
             <div class="tab-content" id="tab-mcp">
-                <div class="form-group">
-                    <label>Add new MCP</label>
-                    <input type="text" id="mcpName" placeholder="Name (e.g. My API)" aria-label="MCP name">
-                    <input type="text" id="mcpDescription" placeholder="Description" aria-label="MCP description">
-                    <input type="text" id="mcpEndpoint" placeholder="Endpoint URL (e.g. https://api.example.com)" aria-label="MCP endpoint URL">
-                    <select id="mcpMethod" aria-label="MCP method">
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                    </select>
-                    <button type="button" class="btn-secondary" id="mcpAddBtn">Add MCP</button>
-                    <div id="mcpAddStatus" class="llm-status"></div>
-                </div>
+                <!-- Add local MCP: collapsible, collapsed by default,
+                     stays at top; "Use this" expands it with a prefill -->
                 <div class="form-group">
                     <div class="collapse-header">
-                        <label style="margin: 0;">Local MCPs</label>
-                        <button type="button" class="btn-icon" id="localMcpCollapseBtn"
-                                aria-expanded="true" aria-controls="localMcpBody"
-                                title="Collapse local MCPs">&#9650;</button>
+                        <label style="margin: 0;">Add local MCP</label>
+                        <button type="button" class="btn-icon" id="mcpAddCollapseBtn"
+                                aria-expanded="false" aria-controls="mcpAddBody"
+                                title="Expand add local MCP">&#9654;</button>
                     </div>
-                    <div id="localMcpBody">
-                        <div id="localMcpGrid" class="marketplace-grid"></div>
+                    <div id="mcpAddBody" style="display: none;">
+                        <input type="text" id="mcpName" placeholder="Name (e.g. My API)" aria-label="MCP name">
+                        <input type="text" id="mcpDescription" placeholder="Description" aria-label="MCP description">
+                        <input type="text" id="mcpEndpoint" placeholder="Endpoint URL (e.g. https://api.example.com)" aria-label="MCP endpoint URL">
+                        <select id="mcpMethod" aria-label="MCP method">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                        </select>
+                        <button type="button" class="btn-secondary" id="mcpAddBtn">Add MCP</button>
+                        <div id="mcpAddStatus" class="llm-status"></div>
                     </div>
                 </div>
+                <!-- Unified grid: filter pills + search over local and
+                     remote cards together, like the LLM model browser -->
                 <div class="form-group">
-                    <label>Remote Marketplace</label>
-                    <input type="text" id="remoteMcpSearch" placeholder="Search marketplace…"
-                           aria-label="Search remote marketplace">
-                    <div id="remoteMcpGrid" class="marketplace-grid"></div>
-                    <div class="llm-status">More servers at
-                        <a href="https://mcpmarket.com" target="_blank" rel="noopener">mcpmarket.com</a>
-                        and other community marketplaces — add any of them with the form above.
+                    <div id="mcpFilterChips" class="chip-row"></div>
+                    <input type="text" id="mcpSearch" placeholder="Search MCPs…"
+                           aria-label="Search MCPs">
+                    <div id="mcpGrid" class="marketplace-grid"></div>
+                    <div id="mcpGridNote" class="llm-status"></div>
+                    <div class="llm-status">Leaderboard snapshot · 2026-10-27 · Top servers at
+                        <a href="https://mcpmarket.com/leaderboards" target="_blank" rel="noopener">mcpmarket.com/leaderboards</a>
+                        and top skills at
+                        <a href="https://mcpmarket.com/tools/skills/leaderboard" target="_blank" rel="noopener">mcpmarket.com/tools/skills/leaderboard</a>.
+                        Your local MCP server handles custom entries — add them with the form above.
                     </div>
                 </div>
             </div>
@@ -326,6 +329,13 @@
                 <div class="form-group">
                     <label>Skills</label>
                     <div id="personalityList" class="personality-list"></div>
+                </div>
+                <div class="form-group">
+                    <label>Top Skills</label>
+                    <div id="leaderboardSkillsGrid" class="marketplace-grid"></div>
+                    <div class="llm-status">Leaderboard snapshot · 2026-10-27 · See the full ranking at
+                        <a href="https://mcpmarket.com/tools/skills/leaderboard" target="_blank" rel="noopener">mcpmarket.com/tools/skills/leaderboard</a>.
+                    </div>
                 </div>
             </div>
         </div>

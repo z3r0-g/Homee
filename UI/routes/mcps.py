@@ -79,13 +79,30 @@ def mcp_local():
 
 @mcps_bp.route("/api/mcp/remote", methods=["GET"])
 def mcp_remote():
-    """Remote marketplace: the MCP service's built-ins plus the curated
-    community catalog (mcpmarket.com and other popular listings). The
-    curated entries win on id collisions so cards carry endpoints and
-    auth notes."""
-    from ..mcp_catalog import remote_catalog
+    """Remote marketplace: the MCP service's built-ins plus the
+    MCP Market leaderboard snapshot (top 30). Leaderboard entries
+    carry no endpoint, so cards offer Use-this (prefill the Add
+    form) and View instead of Import. The snapshot loads from disk,
+    so remote cards still render when the MCP service is down."""
+    from ..leaderboard import load_leaderboard
+    snap = load_leaderboard("mcp")
+    merged = {}
+    for entry in snap.get("entries", []):
+        merged[entry["id"]] = {
+            "id": entry["id"],
+            "name": entry.get("name", entry["id"]),
+            "description": entry.get("description", ""),
+            "endpoint": "",
+            "method": "GET",
+            "source": "Leaderboard",
+            "source_url": snap.get("source_url", ""),
+            "auth_note": "",
+            "rank": entry.get("rank"),
+            "author": entry.get("author", ""),
+            "category": entry.get("category", ""),
+            "stars": entry.get("stars", ""),
+        }
     data, status = _proxy_data("GET", "/api/mcp/marketplace")
-    merged = {entry["id"]: entry for entry in remote_catalog()}
     if status == 200 and isinstance(data, dict):
         for entry in data.get("mcps", []):
             entry = dict(entry)
@@ -100,16 +117,22 @@ def mcp_remote():
 
 @mcps_bp.route("/api/mcp/import/<mcp_id>", methods=["POST"])
 def mcp_import(mcp_id):
-    """Copy a remote marketplace entry into the local registry."""
-    from ..mcp_catalog import remote_catalog
+    """Copy a remote marketplace entry into the local registry.
+    Leaderboard entries have no endpoint, so importing one is
+    refused — the card offers Use-this (prefill the Add form)
+    instead."""
+    from ..leaderboard import load_leaderboard
+    snap = load_leaderboard("mcp")
+    candidates = {e["id"]: e for e in snap.get("entries", [])}
     data, status = _proxy_data("GET", "/api/mcp/marketplace")
-    candidates = {e["id"]: e for e in remote_catalog()}
     if status == 200 and isinstance(data, dict):
         for entry in data.get("mcps", []):
             candidates.setdefault(entry["id"], entry)
     entry = candidates.get(mcp_id)
     if not entry:
         return jsonify({"error": f"Remote MCP '{mcp_id}' not found"}), 404
+    if not entry.get("endpoint"):
+        return jsonify({"error": f"'{entry.get('name', mcp_id)}' has no endpoint — add it with the Add local MCP form."}), 400
     payload = {
         "id": entry["id"],
         "name": entry.get("name", mcp_id),

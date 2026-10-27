@@ -232,7 +232,8 @@ def _mcp_proxy_stub(method, path, json_body=None):
                           "method": "GET"}]}, 200
     if method == "GET" and path == "/api/mcp/marketplace":
         return {"mcps": [{"id": "built1", "name": "Built One",
-                          "description": "d"}]}, 200
+                          "description": "d",
+                          "endpoint": "https://built.example"}]}, 200
     if method == "POST" and path == "/api/mcps":
         return {"success": True, "mcp": json_body}, 200
     if method == "PUT":
@@ -249,22 +250,49 @@ def test_mcp_local_defaults_enabled(client, monkeypatch):
     assert mcps[0]["enabled"] is True and mcps[0]["type"] == "local"
 
 
-def test_mcp_remote_merges_curated_and_builtin(client, monkeypatch):
+def test_mcp_remote_merges_leaderboard_and_builtin(client, monkeypatch):
     import UI.routes.mcps as mcps_routes
     monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
     resp = client.get("/api/mcp/remote")
     assert resp.status_code == 200
-    ids = [m["id"] for m in resp.get_json()["mcps"]]
-    assert "jsonplaceholder" in ids  # curated, no-auth entry
+    mcps = resp.get_json()["mcps"]
+    ids = [m["id"] for m in mcps]
+    assert "lb-mcp-1" in ids  # leaderboard snapshot entry
     assert "built1" in ids  # proxied built-in entry
+    assert "jsonplaceholder" not in ids  # retired curated catalog
+    lb = [m for m in mcps if m["id"] == "lb-mcp-1"][0]
+    assert lb["source"] == "Leaderboard" and lb["rank"] == 1
+    assert lb["endpoint"] == ""  # no endpoint: Use-this + View, no Import
 
 
 def test_mcp_import_copies_remote_entry(client, monkeypatch):
     import UI.routes.mcps as mcps_routes
     monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
-    resp = client.post("/api/mcp/import/jsonplaceholder")
+    resp = client.post("/api/mcp/import/built1")
     assert resp.status_code == 200
-    assert resp.get_json()["mcp"]["endpoint"] == "https://jsonplaceholder.typicode.com"
+    assert resp.get_json()["mcp"]["endpoint"] == "https://built.example"
+
+
+def test_mcp_import_rejects_leaderboard_entry(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.post("/api/mcp/import/lb-mcp-1")
+    assert resp.status_code == 400
+    assert "no endpoint" in resp.get_json()["error"]
+
+
+def test_skills_leaderboard_returns_snapshot(client):
+    resp = client.get("/api/skills/leaderboard")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["snapshot_date"] == "2026-10-27"
+    assert "mcpmarket.com/tools/skills/leaderboard" in data["source_url"]
+    skills = data["skills"]
+    assert len(skills) == 30
+    assert [s["rank"] for s in skills] == list(range(1, 31))
+    for skill in skills:
+        assert skill["author"] and skill["name"] and skill["description"]
+        assert skill["category"] and skill["stars"]
 
 
 def test_mcp_disable_proxies_put(client, monkeypatch):

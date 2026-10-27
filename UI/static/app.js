@@ -30,8 +30,6 @@ const closeModalBtns = document.querySelectorAll('.close-modal');
 const personalityForm = document.getElementById('personalityForm');
 const newBotForm = document.getElementById('newBotForm');
 const settingsForm = document.getElementById('settingsForm');
-const localMcpGrid = document.getElementById('localMcpGrid');
-const remoteMcpGrid = document.getElementById('remoteMcpGrid');
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabContents = document.querySelectorAll('.tab-content');
 const modeOptions = document.getElementById('modeOptions');
@@ -1437,20 +1435,65 @@ loadLlmStatus();
 // and there was no way to add an MCP at all. These routes exist now.
 let remoteMcpCache = {};
 let remoteMcpList = [];
+let localMcpList = [];
+let mcpFilter = 'all';
 
-async function renderLocalMcps() {
-    const grid = document.getElementById('localMcpGrid');
-    if (!grid) return;
+// ── MCP Marketplace: one grid for local + remote, filtered by pills ──
+// Local cards show their enabled state (green, like loaded models);
+// remote cards are the MCP service's built-ins plus the leaderboard
+// snapshot. Search filters the cached lists (no refetch per keystroke).
+async function loadMcps() {
     try {
-        const response = await fetch(`${API_BASE}/api/mcp/local`);
-        const data = await response.json();
-        const mcps = data.mcps || [];
-        if (!mcps.length) {
-            grid.innerHTML = '<p style="color: var(--color-muted);">No local MCPs yet. Add one above.</p>';
-            return;
-        }
-        grid.innerHTML = mcps.map(mcp => `
-            <div class="mcp-card">
+        const [localRes, remoteRes] = await Promise.all([
+            fetch(`${API_BASE}/api/mcp/local`),
+            fetch(`${API_BASE}/api/mcp/remote`),
+        ]);
+        const localData = await localRes.json();
+        const remoteData = await remoteRes.json();
+        localMcpList = localData.mcps || [];
+        remoteMcpList = remoteData.mcps || [];
+        remoteMcpCache = {};
+        remoteMcpList.forEach(m => { remoteMcpCache[m.id] = m; });
+    } catch (e) {
+        console.warn('Failed to load MCPs', e);
+    }
+    renderMcpGrid();
+}
+
+function renderMcpFilterChips() {
+    const row = document.getElementById('mcpFilterChips');
+    if (!row) return;
+    const filters = [['all', 'All'], ['local', 'Local'], ['remote', 'Remote']];
+    row.innerHTML = filters.map(([key, label]) => `<button type="button" class="chip${mcpFilter === key ? ' active' : ''}" data-mcp-filter="${key}">${label}</button>`).join('');
+    row.querySelectorAll('[data-mcp-filter]').forEach(btn => btn.addEventListener('click', () => {
+        mcpFilter = btn.dataset.mcpFilter;
+        renderMcpFilterChips();
+        renderMcpGrid();
+    }));
+}
+
+function renderMcpGrid() {
+    const grid = document.getElementById('mcpGrid');
+    if (!grid) return;
+    const query = (document.getElementById('mcpSearch')?.value || '').trim().toLowerCase();
+    const local = localMcpList.map(m => ({ ...m, _kind: 'local' }));
+    const remote = remoteMcpList.map(m => ({ ...m, _kind: 'remote' }));
+    let shown = mcpFilter === 'local' ? local : mcpFilter === 'remote' ? remote : [...local, ...remote];
+    if (query) {
+        shown = shown.filter(m => [m.name, m.description, m.source, m.author, m.category].join(' ').toLowerCase().includes(query));
+    }
+    const note = document.getElementById('mcpGridNote');
+    if (note) note.textContent = `${localMcpList.length} local · ${remoteMcpList.length} remote`;
+    if (!shown.length) {
+        grid.innerHTML = query
+            ? `<p style="color: var(--color-muted);">No MCPs match '${escapeHtml(query)}'.</p>`
+            : '<p style="color: var(--color-muted);">No MCPs found.</p>';
+        return;
+    }
+    grid.innerHTML = shown.map(mcp => {
+        if (mcp._kind === 'local') {
+            return `
+            <div class="mcp-card${mcp.enabled === false ? '' : ' enabled'}">
                 <div class="mcp-header">
                     <span class="mcp-name">${escapeHtml(mcp.name)}</span>
                     <span class="mcp-badge mcp-badge-local">Local</span>
@@ -1459,105 +1502,79 @@ async function renderLocalMcps() {
                 <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
                 <div class="mcp-description">${escapeHtml(mcp.endpoint || '')} · ${escapeHtml(mcp.method || 'GET')}</div>
                 <div class="mcp-actions">
-                    <button class="btn-icon" data-mcp-action="${mcp.enabled === false ? 'enable' : 'disable'}" data-mcp-id="${escapeHtml(mcp.id)}" title="${mcp.enabled === false ? 'Enable' : 'Disable'}" aria-label="${mcp.enabled === false ? 'Enable MCP' : 'Disable MCP'}">${mcp.enabled === false ? '&#10003;' : '&#10006;'}</button>
-                    <button class="btn-icon" data-mcp-action="remove" data-mcp-id="${escapeHtml(mcp.id)}" title="Remove" aria-label="Remove MCP">&#128465;</button>
+                    <button class="btn-icon" data-mcp-kind="local" data-mcp-action="${mcp.enabled === false ? 'enable' : 'disable'}" data-mcp-id="${escapeHtml(mcp.id)}" title="${mcp.enabled === false ? 'Enable' : 'Disable'}" aria-label="${mcp.enabled === false ? 'Enable MCP' : 'Disable MCP'}">${mcp.enabled === false ? '&#10003;' : '&#10006;'}</button>
+                    <button class="btn-icon" data-mcp-kind="local" data-mcp-action="remove" data-mcp-id="${escapeHtml(mcp.id)}" title="Remove" aria-label="Remove MCP">&#128465;</button>
                 </div>
-            </div>`).join('');
-        grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
-            const action = btn.dataset.mcpAction;
-            const id = btn.dataset.mcpId;
+            </div>`;
+        }
+        const isLeaderboard = mcp.source === 'Leaderboard';
+        return `
+            <div class="mcp-card">
+                <div class="mcp-header">
+                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
+                    ${isLeaderboard ? `<span class="mcp-badge mcp-badge-leaderboard">#${mcp.rank}</span>` : '<span class="mcp-badge mcp-badge-remote">Remote</span>'}
+                </div>
+                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
+                <div class="mcp-description">${isLeaderboard ? `${escapeHtml(mcp.author || '')} · ${escapeHtml(mcp.category || '')} · ★ ${escapeHtml(mcp.stars || '')}` : `Source: ${escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}`}</div>
+                <div class="mcp-actions">
+                    <button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use this</button>
+                    ${mcp.endpoint ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}">Import</button>` : ''}
+                    ${isLeaderboard && mcp.source_url ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
+                </div>
+            </div>`;
+    }).join('');
+    grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
+        const action = btn.dataset.mcpAction;
+        const kind = btn.dataset.mcpKind;
+        const id = btn.dataset.mcpId;
+        if (kind === 'local') {
             if (action === 'remove') {
                 if (!confirm('Remove this MCP?')) return;
                 await fetch(`${API_BASE}/api/mcps/${encodeURIComponent(id)}`, { method: 'DELETE' });
             } else {
                 await fetch(`${API_BASE}/api/mcp/${action}/${encodeURIComponent(id)}`, { method: 'POST' });
             }
-            await renderLocalMcps();
-        }));
-    } catch (e) {
-        console.warn('Failed to load local MCPs', e);
-        grid.innerHTML = '<p style="color: var(--color-muted);">MCP service unreachable.</p>';
-    }
+            await loadMcps();
+            await loadMcpStatus();
+            return;
+        }
+        const entry = remoteMcpCache[id];
+        if (!entry) return;
+        if (action === 'use') {
+            prefillMcpForm(entry);
+        } else if (action === 'import') {
+            setMcpAddCollapsed(false);
+            const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
+            const result = await res.json();
+            const statusEl = document.getElementById('mcpAddStatus');
+            if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
+            await loadMcps();
+            await loadMcpStatus();
+        } else if (action === 'view') {
+            window.open(entry.source_url, '_blank', 'noopener');
+        }
+    }));
 }
 
-async function renderRemoteMcps() {
-    const grid = document.getElementById('remoteMcpGrid');
-    if (!grid) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/mcp/remote`);
-        const data = await response.json();
-        remoteMcpList = data.mcps || [];
-        remoteMcpCache = {};
-        remoteMcpList.forEach(m => { remoteMcpCache[m.id] = m; });
-        renderRemoteGrid();
-    } catch (e) {
-        console.warn('Failed to load remote MCPs', e);
-        grid.innerHTML = '<p style="color: var(--color-muted);">Failed to load remote marketplace.</p>';
-    }
-}
+const mcpSearch = document.getElementById('mcpSearch');
+if (mcpSearch) mcpSearch.addEventListener('input', renderMcpGrid);
 
-// Search filters the cached remote list (no refetch per keystroke).
-function renderRemoteGrid() {
-    const grid = document.getElementById('remoteMcpGrid');
-    if (!grid) return;
-    const query = (document.getElementById('remoteMcpSearch')?.value || '').trim().toLowerCase();
-    const mcps = query
-        ? remoteMcpList.filter(m => [m.name, m.description, m.source, ...(m.categories || [])]
-            .join(' ').toLowerCase().includes(query))
-        : remoteMcpList;
-    if (!mcps.length) {
-        grid.innerHTML = query
-            ? `<p style="color: var(--color-muted);">No remote MCPs match '${escapeHtml(query)}'.</p>`
-            : '<p style="color: var(--color-muted);">No remote MCPs found.</p>';
-        return;
-    }
-    grid.innerHTML = mcps.map(mcp => `
-            <div class="mcp-card">
-                <div class="mcp-header">
-                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
-                    <span class="mcp-badge mcp-badge-remote">Remote</span>
-                </div>
-                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
-                <div class="mcp-description">Source: ${mcp.source_url ? `<a href="${escapeHtml(mcp.source_url)}" target="_blank" rel="noopener">${escapeHtml(mcp.source)}</a>` : escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}</div>
-                <div class="mcp-actions">
-                    <button class="btn-secondary small" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use this</button>
-                    ${mcp.endpoint ? `<button class="btn-secondary small" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}">Import</button>` : ''}
-                </div>
-            </div>`).join('') || '<p style="color: var(--color-muted);">No remote MCPs found.</p>';
-        grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
-            const action = btn.dataset.mcpAction;
-            const entry = remoteMcpCache[btn.dataset.mcpId];
-            if (!entry) return;
-            if (action === 'use') {
-                prefillMcpForm(entry);
-            } else if (action === 'import') {
-                const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
-                const result = await res.json();
-                const statusEl = document.getElementById('mcpAddStatus');
-                if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
-                await renderLocalMcps();
-            }
-        }));
-}
-
-const remoteMcpSearch = document.getElementById('remoteMcpSearch');
-if (remoteMcpSearch) remoteMcpSearch.addEventListener('input', renderRemoteGrid);
-
-function setLocalMcpCollapsed(collapsed) {
-    const body = document.getElementById('localMcpBody');
-    const btn = document.getElementById('localMcpCollapseBtn');
+function setMcpAddCollapsed(collapsed) {
+    const body = document.getElementById('mcpAddBody');
+    const btn = document.getElementById('mcpAddCollapseBtn');
     if (body) body.style.display = collapsed ? 'none' : '';
     if (btn) {
         btn.setAttribute('aria-expanded', String(!collapsed));
         btn.innerHTML = collapsed ? '&#9654;' : '&#9650;';
-        btn.title = collapsed ? 'Expand local MCPs' : 'Collapse local MCPs';
+        btn.title = collapsed ? 'Expand add local MCP' : 'Collapse add local MCP';
     }
 }
-const localMcpCollapseBtn = document.getElementById('localMcpCollapseBtn');
-if (localMcpCollapseBtn) localMcpCollapseBtn.addEventListener('click', () => {
-    const body = document.getElementById('localMcpBody');
-    setLocalMcpCollapsed(!(body && body.style.display === 'none'));
+const mcpAddCollapseBtn = document.getElementById('mcpAddCollapseBtn');
+if (mcpAddCollapseBtn) mcpAddCollapseBtn.addEventListener('click', () => {
+    const body = document.getElementById('mcpAddBody');
+    setMcpAddCollapsed(!(body && body.style.display === 'none'));
 });
+renderMcpFilterChips();
 
 function prefillMcpForm(entry) {
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
@@ -1569,6 +1586,7 @@ function prefillMcpForm(entry) {
     if (statusEl) statusEl.textContent = entry.endpoint
         ? `'${entry.name}' ready — press Add MCP to register it.`
         : `'${entry.name}' needs an endpoint URL — fill it in, then Add MCP.`;
+    setMcpAddCollapsed(false);
     const endpointEl = document.getElementById('mcpEndpoint');
     if (endpointEl) endpointEl.focus();
 }
@@ -1603,11 +1621,47 @@ if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
         if (nameEl) nameEl.value = '';
         if (descEl) descEl.value = '';
         if (endpointEl) endpointEl.value = '';
-        await renderLocalMcps();
+        await loadMcps();
+        await loadMcpStatus();
     } catch (e) {
         if (statusEl) statusEl.textContent = `Add failed: ${e.message}`;
     }
 });
+
+// Top Skills: the MCP Market skills leaderboard snapshot, shown
+// alongside local skills. Discovery only — entries carry no repo
+// URL, so cards link out instead of importing.
+async function renderLeaderboardSkills() {
+    const grid = document.getElementById('leaderboardSkillsGrid');
+    if (!grid) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/skills/leaderboard`);
+        const data = await response.json();
+        const skills = data.skills || [];
+        if (!skills.length) {
+            grid.innerHTML = '<p style="color: var(--color-muted);">Leaderboard unavailable.</p>';
+            return;
+        }
+        grid.innerHTML = skills.map(s => `
+            <div class="mcp-card">
+                <div class="mcp-header">
+                    <span class="mcp-name">${escapeHtml(s.name)}</span>
+                    <span class="mcp-badge mcp-badge-leaderboard">#${s.rank}</span>
+                </div>
+                <div class="mcp-description">${escapeHtml(s.description || '')}</div>
+                <div class="mcp-description">${escapeHtml(s.author || '')} · ${escapeHtml(s.category || '')} · ★ ${escapeHtml(s.stars || '')}</div>
+                <div class="mcp-actions">
+                    <button class="btn-secondary small" data-skill-view="${escapeHtml(data.source_url || '')}">View</button>
+                </div>
+            </div>`).join('');
+        grid.querySelectorAll('[data-skill-view]').forEach(btn => btn.addEventListener('click', () => {
+            window.open(btn.dataset.skillView, '_blank', 'noopener');
+        }));
+    } catch (e) {
+        console.warn('Failed to load skills leaderboard', e);
+        grid.innerHTML = '<p style="color: var(--color-muted);">Leaderboard unavailable.</p>';
+    }
+}
 
 // ── Skills: local skills on by default, disableable ──────
 // The old render used agent.id / agent.status, which /api/agents/active
@@ -1718,7 +1772,7 @@ if (agentsSyncBtn) agentsSyncBtn.addEventListener('click', async () => {
 
 // Initialize MCP and Skills
 async function initMCPAndPersonalities() {
-    await renderLocalMcps();
-    await renderRemoteMcps();
+    await loadMcps();
     await renderAgentPersonalities();
+    await renderLeaderboardSkills();
 }
