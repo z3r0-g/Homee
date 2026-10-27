@@ -59,10 +59,14 @@ def _tmp_settings(tmp_path, monkeypatch):
 
 
 def test_default_local_model_matches_installer(_tmp_settings):
-    # install.sh pulls qwen2.5:7b; the router default must be the same tag,
-    # otherwise a fresh install fails first chat with "model not found".
+    # Both install.sh and the router pick the default by host RAM
+    # (qwen2.5:3b under 12 GB, qwen2.5:7b above); the router default must
+    # equal that rule, otherwise a fresh install fails first chat with
+    # "model not found".
+    from UI import model_catalog
     router = LLMRouter(client=FakeClient())
-    assert router.settings["llm"]["local_model"] == "qwen2.5:7b"
+    assert router.settings["llm"]["local_model"] == model_catalog.default_model(
+        model_catalog.host_total_ram_gb())
     assert router.settings["llm"]["provider"] == "local"
 
 
@@ -77,6 +81,9 @@ def test_status_offline(_tmp_settings):
 
 
 def test_status_reports_installed_configured_model(_tmp_settings):
+    # Pin the configured model: this test is about status reporting,
+    # not about which default the host's RAM selects.
+    _tmp_settings.write_text('{"llm": {"local_model": "qwen2.5:7b"}}')
     router = LLMRouter(client=FakeClient(models=["qwen2.5:7b", "llama3.1:8b"]))
     status = router.ollama_status()
     assert status["running"] is True
@@ -93,6 +100,8 @@ def test_model_name_matching_treats_missing_tag_as_latest():
 
 
 def test_query_local_model_not_found_is_actionable(_tmp_settings):
+    # Pin the configured model so the hint names the model in the error.
+    _tmp_settings.write_text('{"llm": {"local_model": "qwen2.5:7b"}}')
     router = LLMRouter(client=FakeClient(
         chat_error=Exception("model 'qwen2.5:7b' not found, try pulling it")))
     result = router.query_local([{"role": "user", "content": "hi"}])
@@ -264,3 +273,12 @@ def test_catalog_filter_by_capability():
     vision = [m for m in model_catalog.MODELS if "vision" in m["capabilities"]]
     assert vision and all(m["size_gb"] for m in vision)
     assert "llava:7b" in [m["name"] for m in vision]
+
+
+def test_default_model_by_ram():
+    from UI import model_catalog
+    assert model_catalog.default_model(8.0) == "qwen2.5:3b"
+    assert model_catalog.default_model(11.9) == "qwen2.5:3b"
+    assert model_catalog.default_model(12.0) == "qwen2.5:7b"
+    assert model_catalog.default_model(16.0) == "qwen2.5:7b"
+    assert model_catalog.default_model(None) == "qwen2.5:7b"

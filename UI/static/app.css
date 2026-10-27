@@ -823,6 +823,14 @@ textarea:focus-visible {
     margin-bottom: 8px;
 }
 
+/* Shared collapsible-section header (Local MCPs mirrors Local Models). */
+.collapse-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
 /* Capability filter chips. */
 .chip-row {
     display: flex;

@@ -240,11 +240,20 @@
                     <div id="mcpAddStatus" class="llm-status"></div>
                 </div>
                 <div class="form-group">
-                    <label>Local MCPs</label>
-                    <div id="localMcpGrid" class="marketplace-grid"></div>
+                    <div class="collapse-header">
+                        <label style="margin: 0;">Local MCPs</label>
+                        <button type="button" class="btn-icon" id="localMcpCollapseBtn"
+                                aria-expanded="true" aria-controls="localMcpBody"
+                                title="Collapse local MCPs">&#9650;</button>
+                    </div>
+                    <div id="localMcpBody">
+                        <div id="localMcpGrid" class="marketplace-grid"></div>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Remote Marketplace</label>
+                    <input type="text" id="remoteMcpSearch" placeholder="Search marketplace…"
+                           aria-label="Search remote marketplace">
                     <div id="remoteMcpGrid" class="marketplace-grid"></div>
                     <div class="llm-status">More servers at
                         <a href="https://mcpmarket.com" target="_blank" rel="noopener">mcpmarket.com</a>

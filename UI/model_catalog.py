@@ -57,6 +57,11 @@ MODELS: List[Dict[str, Any]] = [
 
 CAPABILITIES = ["thinking", "tool", "vision", "code", "embedding"]
 
+# Fresh-install default model, by host size (see default_model()).
+SMALL_HOST_MODEL = "qwen2.5:3b"
+DEFAULT_MODEL = "qwen2.5:7b"
+SMALL_HOST_RAM_GB = 12
+
 
 def host_ram_gb() -> Optional[float]:
     """Available RAM in GB (psutil), or None when it cannot be measured."""
@@ -65,6 +70,30 @@ def host_ram_gb() -> Optional[float]:
         return psutil.virtual_memory().available / (1024 ** 3)
     except Exception:  # noqa: BLE001 - psutil optional
         return None
+
+
+def host_total_ram_gb() -> Optional[float]:
+    """Total physical RAM in GB (a hardware property, unlike available
+    RAM which fluctuates with load). Used for the install-time default."""
+    try:
+        import psutil
+        return psutil.virtual_memory().total / (1024 ** 3)
+    except Exception:  # noqa: BLE001 - psutil optional
+        return None
+
+
+def default_model(total_gb: Optional[float] = None) -> str:
+    """Fresh-install default local model for a host of this size.
+
+    Under 12 GB total RAM the 3B model is the default: a 7B (~4.7 GB
+    resident) leaves an 8 GB host right at the edge once the OS, Ollama,
+    and both services are counted, and CPU generation speed roughly
+    doubles going from 7B to 3B. Unknown RAM keeps the historical 7B
+    default rather than guessing small.
+    """
+    if total_gb is not None and total_gb < SMALL_HOST_RAM_GB:
+        return SMALL_HOST_MODEL
+    return DEFAULT_MODEL
 
 
 def size_cap_gb() -> Optional[int]:
@@ -93,6 +122,7 @@ def catalog() -> Dict[str, Any]:
     if cap is not None:
         search_url += f"&s={cap}"
     return {
+        "default_model": default_model(host_total_ram_gb()),
         "ram_available_gb": round(host_ram_gb(), 1) if host_ram_gb() is not None else None,
         "size_cap_gb": cap,
         "ollama_search_url": search_url,

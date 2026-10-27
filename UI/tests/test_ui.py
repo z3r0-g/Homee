@@ -123,6 +123,9 @@ def test_llm_status_endpoint(client, monkeypatch):
     monkeypatch.setattr(
         settings_routes, "llm_router",
         LLMRouter(client=_FakeOllamaClient(models=["qwen2.5:7b"])))
+    # Pin the configured model: this test is about status reporting,
+    # not about which default the host's RAM selects.
+    client.post("/api/settings", json={"llm": {"local_model": "qwen2.5:7b"}})
     resp = client.get("/api/llm/status")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -317,3 +320,15 @@ def test_agents_refresh_imports_remote_personality_json(client, tmp_path, monkey
     data = client.get("/api/personalities").get_json()
     names = [p["name"] for p in data["personalities"]]
     assert "Librarian" in names
+
+
+def test_llm_catalog_names_default_model(client):
+    data = client.get("/api/llm/catalog").get_json()
+    assert data["default_model"] in ("qwen2.5:3b", "qwen2.5:7b")
+
+
+def test_settings_default_model_is_ram_aware(client):
+    from UI import model_catalog
+    expected = model_catalog.default_model(model_catalog.host_total_ram_gb())
+    data = client.get("/api/settings").get_json()
+    assert data["llm"]["local_model"] == expected

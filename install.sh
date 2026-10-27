@@ -54,7 +54,17 @@ APP_ROOT="$(pwd)"
 UI_PORT=5001
 MCP_PORT=5002
 
-MODEL_NAME="${MODEL_NAME:-qwen2.5:7b}"
+# Default model, RAM-aware (same rule as UI/model_catalog.py): hosts
+# under 12 GB total RAM default to qwen2.5:3b, roomier hosts to qwen2.5:7b.
+# An explicitly exported MODEL_NAME always wins.
+if [ -z "${MODEL_NAME:-}" ]; then
+    TOTAL_GB=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}')
+    if [ -n "$TOTAL_GB" ] && [ "$TOTAL_GB" -lt 12 ]; then
+        MODEL_NAME="qwen2.5:3b"
+    else
+        MODEL_NAME="qwen2.5:7b"
+    fi
+fi
 
 MIN_RAM_MB=8192
 RECOMMENDED_RAM_MB=16384

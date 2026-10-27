@@ -34,10 +34,25 @@ DEBUG = os.getenv("UI_DEBUG", "false").lower() == "true"
 
 MCP_SERVICE_URL = os.getenv("MCP_SERVICE_URL", "http://localhost:5002")
 
-# Must match install.sh's MODEL_NAME (qwen2.5:7b): in Ollama, "qwen2.5"
-# resolves to the :latest tag, which is NOT satisfied by an installed
-# qwen2.5:7b — the mismatch used to break fresh installs at first chat.
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+# Default local model, RAM-aware (see UI/model_catalog.py): hosts under
+# 12 GB total RAM default to qwen2.5:3b, roomier hosts to qwen2.5:7b.
+# install.sh picks with the same rule. An explicit OLLAMA_MODEL env value
+# always wins, and an existing settings.json keeps its saved local_model
+# (disk wins over defaults on load), so this only affects fresh installs.
+# NOTE on tags: in Ollama, "qwen2.5" resolves to the :latest tag, which is
+# NOT satisfied by an installed qwen2.5:7b — always use a full tag.
+def _default_ollama_model() -> str:
+    env = os.getenv("OLLAMA_MODEL")
+    if env:
+        return env
+    try:
+        from .model_catalog import default_model, host_total_ram_gb
+        return default_model(host_total_ram_gb())
+    except Exception:  # noqa: BLE001 - psutil optional
+        return "qwen2.5:7b"
+
+
+OLLAMA_MODEL = _default_ollama_model()
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Default settings merged with any on-disk settings

@@ -680,10 +680,12 @@ function renderModelBrowser() {
             filter === 'all' || (m.capabilities || []).includes(filter));
         grid.innerHTML = shown.map(m => {
             const isInstalled = installedSet.has(m.name);
+            const isDefault = m.name === catalog.default_model;
             return `<div class="model-card${isInstalled ? ' loaded' : ''}"${isInstalled ? '' : ` data-pull="${escapeHtml(m.name)}"`}>
                 <div class="model-header">
                     <span class="model-name">${escapeHtml(m.name)}</span>
                     <span class="model-size">${m.size_gb} GB</span>
+                    ${isDefault ? '<span class="mcp-badge mcp-badge-local">Default</span>' : ''}
                     ${isInstalled ? '<span class="mcp-badge status-active">Loaded</span>' : ''}
                 </div>
                 <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
@@ -694,10 +696,11 @@ function renderModelBrowser() {
     }
 
     if (note) {
-        note.textContent = catalog.size_cap_gb
+        note.textContent = (catalog.size_cap_gb
             ? `Showing models up to ${catalog.size_cap_gb} GB (available RAM: ${catalog.ram_available_gb} GB).` +
               (catalog.hidden_count ? ` ${catalog.hidden_count} larger model(s) hidden.` : '')
-            : 'Host RAM size unknown — showing all models.';
+            : 'Host RAM size unknown — showing all models.') +
+            ` Default model for this host: ${catalog.default_model}.`;
     }
     if (linkBox && catalog.ollama_search_url) {
         linkBox.innerHTML = `<a href="${escapeHtml(catalog.ollama_search_url)}" target="_blank" rel="noopener">Browse all models on ollama.com</a>`;
@@ -968,6 +971,7 @@ loadLlmStatus();
 // /api/mcp/disable/<id> — none of which existed — so it always failed,
 // and there was no way to add an MCP at all. These routes exist now.
 let remoteMcpCache = {};
+let remoteMcpList = [];
 
 async function renderLocalMcps() {
     const grid = document.getElementById('localMcpGrid');
@@ -1017,10 +1021,32 @@ async function renderRemoteMcps() {
     try {
         const response = await fetch(`${API_BASE}/api/mcp/remote`);
         const data = await response.json();
-        const mcps = data.mcps || [];
+        remoteMcpList = data.mcps || [];
         remoteMcpCache = {};
-        mcps.forEach(m => { remoteMcpCache[m.id] = m; });
-        grid.innerHTML = mcps.map(mcp => `
+        remoteMcpList.forEach(m => { remoteMcpCache[m.id] = m; });
+        renderRemoteGrid();
+    } catch (e) {
+        console.warn('Failed to load remote MCPs', e);
+        grid.innerHTML = '<p style="color: var(--color-muted);">Failed to load remote marketplace.</p>';
+    }
+}
+
+// Search filters the cached remote list (no refetch per keystroke).
+function renderRemoteGrid() {
+    const grid = document.getElementById('remoteMcpGrid');
+    if (!grid) return;
+    const query = (document.getElementById('remoteMcpSearch')?.value || '').trim().toLowerCase();
+    const mcps = query
+        ? remoteMcpList.filter(m => [m.name, m.description, m.source, ...(m.categories || [])]
+            .join(' ').toLowerCase().includes(query))
+        : remoteMcpList;
+    if (!mcps.length) {
+        grid.innerHTML = query
+            ? `<p style="color: var(--color-muted);">No remote MCPs match '${escapeHtml(query)}'.</p>`
+            : '<p style="color: var(--color-muted);">No remote MCPs found.</p>';
+        return;
+    }
+    grid.innerHTML = mcps.map(mcp => `
             <div class="mcp-card">
                 <div class="mcp-header">
                     <span class="mcp-name">${escapeHtml(mcp.name)}</span>
@@ -1047,11 +1073,26 @@ async function renderRemoteMcps() {
                 await renderLocalMcps();
             }
         }));
-    } catch (e) {
-        console.warn('Failed to load remote MCPs', e);
-        grid.innerHTML = '<p style="color: var(--color-muted);">Failed to load remote marketplace.</p>';
+}
+
+const remoteMcpSearch = document.getElementById('remoteMcpSearch');
+if (remoteMcpSearch) remoteMcpSearch.addEventListener('input', renderRemoteGrid);
+
+function setLocalMcpCollapsed(collapsed) {
+    const body = document.getElementById('localMcpBody');
+    const btn = document.getElementById('localMcpCollapseBtn');
+    if (body) body.style.display = collapsed ? 'none' : '';
+    if (btn) {
+        btn.setAttribute('aria-expanded', String(!collapsed));
+        btn.innerHTML = collapsed ? '&#9654;' : '&#9650;';
+        btn.title = collapsed ? 'Expand local MCPs' : 'Collapse local MCPs';
     }
 }
+const localMcpCollapseBtn = document.getElementById('localMcpCollapseBtn');
+if (localMcpCollapseBtn) localMcpCollapseBtn.addEventListener('click', () => {
+    const body = document.getElementById('localMcpBody');
+    setLocalMcpCollapsed(!(body && body.style.display === 'none'));
+});
 
 function prefillMcpForm(entry) {
     const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
