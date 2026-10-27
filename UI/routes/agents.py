@@ -41,7 +41,9 @@ def toggle_agent(agent_id):
     if agent_id in agents:
         agents[agent_id]["active"] = not agents[agent_id].get("active", True)
     else:
-        agents[agent_id] = {"active": True, "name": agent_id}
+        # Absent from settings means default-enabled, so the first toggle
+        # disables it (the old code created it as active: True — a no-op).
+        agents[agent_id] = {"active": False, "name": agent_id}
 
     settings["agents"] = agents
     save_settings(settings)
@@ -51,12 +53,26 @@ def toggle_agent(agent_id):
 
 @agents_bp.route("/api/agents/active", methods=["GET"])
 def active_agents():
-    """Get active/available agents for the personalities modal."""
-    from ..models import personalities_repo
+    """Agents for the personalities tab: every discovered agent, local and
+    remote, with its id and enabled state.
 
-    personalities_repo.load()
-    # Return active agents from the registry
-    agents = agent_registry.list_agents()
+    Local agents are enabled by default; disabling one records
+    ``active: false`` in settings (see toggle_agent). Previously this
+    returned the bare registry rows — no id, no enabled flag — so the tab
+    rendered "undefined" and its buttons could not address an agent.
+    """
+    from ..config import load_settings
+
+    settings = load_settings()
+    agents_cfg = settings.get("agents", {}) if isinstance(settings, dict) else {}
+    agents = []
+    for agent in agent_registry.list_agents():
+        name = agent.get("name", "")
+        agents.append({
+            **agent,
+            "id": name,
+            "active": agents_cfg.get(name, {}).get("active", True),
+        })
     return jsonify({"agents": agents})
 
 
@@ -105,7 +121,12 @@ def list_sources():
 
 @agents_bp.route("/api/agents/refresh", methods=["POST"])
 def refresh_agents():
-    """Re-discover Agents, honouring the agents.git_url UI setting."""
+    """Re-discover Agents, honouring the agents.git_url UI setting.
+
+    Also imports ``*.json`` personality files from the cloned repos (see
+    CONTRIBUTE.md): a repo may ship personality JSON next to its agent
+    ``.py`` files, and syncing pulls those into the personalities store.
+    """
     from ..config import load_settings
     from Agents.registry import agent_registry
 
@@ -113,4 +134,47 @@ def refresh_agents():
     git_url = (settings.get("agents") or {}).get("git_url") or None
     agent_registry.configure_git_url(git_url)
     agent_registry.discover(force=True)
-    return jsonify({"success": True, "agents": agent_registry.list_agents()})
+    imported = _import_remote_personalities()
+    return jsonify({"success": True, "agents": agent_registry.list_agents(),
+                    "personalities_imported": imported})
+
+
+def _import_remote_personalities() -> int:
+    """Import ``*.json`` personality files from cloned agent repos.
+
+    Each file is one personality (or a list of them). Files need at least
+    a ``name``; the id defaults to the file stem. Re-syncing upserts by
+    id, so updating a repo and syncing again picks up edits.
+    """
+    import json
+
+    from ..models import Personality, personalities_repo
+    from Agents.registry import REMOTE_DIR
+
+    personalities_repo.load()
+    count = 0
+    if not REMOTE_DIR.exists():
+        return 0
+    for path in sorted(REMOTE_DIR.rglob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if not isinstance(item, dict) or not item.get("name"):
+                continue
+            item = dict(item)
+            item.setdefault("id", path.stem)
+            new = Personality.from_dict(item)
+            current = personalities_repo.all()
+            for i, existing in enumerate(current):
+                if existing.id == new.id:
+                    personalities_repo._personalities[i] = new
+                    break
+            else:
+                personalities_repo._personalities.append(new)
+            count += 1
+    if count:
+        personalities_repo.save()
+    return count

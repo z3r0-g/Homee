@@ -50,6 +50,91 @@ def mcp_marketplace():
     return _proxy("GET", "/api/mcp/marketplace")
 
 
+def _proxy_data(method, path, json_body=None):
+    """_proxy, unwrapped: (data, status) with error bodies as dicts."""
+    result = _proxy(method, path, json_body)
+    if isinstance(result, tuple):
+        data, status = result
+        if hasattr(data, "get_json"):
+            try:
+                data = data.get_json() or {}
+            except Exception:  # noqa: BLE001
+                data = {"error": "MCP service returned an unreadable response"}
+        return data, status
+    return result, 200
+
+
+@mcps_bp.route("/api/mcp/local", methods=["GET"])
+def mcp_local():
+    """MCPs registered on this host's MCP service (the Local section)."""
+    data, status = _proxy_data("GET", "/api/mcps")
+    if status != 200 or not isinstance(data, dict):
+        return jsonify(data if isinstance(data, dict) else {"error": str(data)}), status
+    mcps = data.get("mcps", [])
+    for mcp in mcps:
+        mcp.setdefault("enabled", True)
+        mcp.setdefault("type", "local")
+    return jsonify({"mcps": mcps})
+
+
+@mcps_bp.route("/api/mcp/remote", methods=["GET"])
+def mcp_remote():
+    """Remote marketplace: the MCP service's built-ins plus the curated
+    community catalog (mcpmarket.com and other popular listings). The
+    curated entries win on id collisions so cards carry endpoints and
+    auth notes."""
+    from ..mcp_catalog import remote_catalog
+    data, status = _proxy_data("GET", "/api/mcp/marketplace")
+    merged = {entry["id"]: entry for entry in remote_catalog()}
+    if status == 200 and isinstance(data, dict):
+        for entry in data.get("mcps", []):
+            entry = dict(entry)
+            entry.setdefault("source", "Built-in marketplace")
+            entry.setdefault("source_url", "")
+            entry.setdefault("endpoint", "")
+            entry.setdefault("method", "GET")
+            entry.setdefault("auth_note", "")
+            merged.setdefault(entry["id"], entry)
+    return jsonify({"mcps": list(merged.values())})
+
+
+@mcps_bp.route("/api/mcp/import/<mcp_id>", methods=["POST"])
+def mcp_import(mcp_id):
+    """Copy a remote marketplace entry into the local registry."""
+    from ..mcp_catalog import remote_catalog
+    data, status = _proxy_data("GET", "/api/mcp/marketplace")
+    candidates = {e["id"]: e for e in remote_catalog()}
+    if status == 200 and isinstance(data, dict):
+        for entry in data.get("mcps", []):
+            candidates.setdefault(entry["id"], entry)
+    entry = candidates.get(mcp_id)
+    if not entry:
+        return jsonify({"error": f"Remote MCP '{mcp_id}' not found"}), 404
+    payload = {
+        "id": entry["id"],
+        "name": entry.get("name", mcp_id),
+        "description": entry.get("description", ""),
+        "endpoint": entry.get("endpoint", ""),
+        "method": entry.get("method", "GET"),
+        "auth_type": "none",
+        "headers": {},
+    }
+    created, create_status = _proxy_data("POST", "/api/mcps", payload)
+    if create_status != 200:
+        return jsonify(created if isinstance(created, dict) else {"error": str(created)}), create_status
+    return jsonify(created)
+
+
+@mcps_bp.route("/api/mcp/enable/<mcp_id>", methods=["POST"])
+def mcp_enable(mcp_id):
+    return _proxy("PUT", f"/api/mcp/{mcp_id}", {"enabled": True})
+
+
+@mcps_bp.route("/api/mcp/disable/<mcp_id>", methods=["POST"])
+def mcp_disable(mcp_id):
+    return _proxy("PUT", f"/api/mcp/{mcp_id}", {"enabled": False})
+
+
 @mcps_bp.route("/api/mcp/execute/<mcp_id>", methods=["POST"])
 def execute_mcp(mcp_id):
     return _proxy("POST", f"/api/mcp/execute/{mcp_id}", request.get_json(silent=True) or {})

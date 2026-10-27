@@ -216,3 +216,51 @@ def test_chat_local_remote_local_falls_back_to_secondary_host(_tmp_settings):
     result = router.chat([{"role": "user", "content": "hi"}])
     assert result["message"]["content"] == "secondary host ok"
     assert "http://otherhost:11434" in seen_hosts
+
+
+# ── Model delete + catalog ────────────────────────────────────────────
+
+class DeleteRecorder:
+    """Fake ollama client recording delete() calls."""
+
+    def __init__(self, fail=False):
+        self.deleted = []
+        self.fail = fail
+
+    def delete(self, model):
+        if self.fail:
+            raise Exception("model not found")
+        self.deleted.append(model)
+
+
+def test_delete_model_calls_client():
+    router = LLMRouter(client=DeleteRecorder())
+    result = router.delete_model("qwen2.5:7b")
+    assert result["success"] is True
+    assert router._client.deleted == ["qwen2.5:7b"]
+
+
+def test_delete_model_failure_is_a_failure_dict():
+    router = LLMRouter(client=DeleteRecorder(fail=True))
+    result = router.delete_model("nope:1b")
+    assert "error" in result
+
+
+def test_catalog_filters_by_host_ram(monkeypatch):
+    from UI import model_catalog
+    monkeypatch.setattr(model_catalog, "host_ram_gb", lambda: 6.0)
+    cat = model_catalog.catalog()
+    assert cat["size_cap_gb"] == 6
+    assert cat["ollama_search_url"] == "https://ollama.com/search?c=local&s=6"
+    names = [m["name"] for m in cat["models"]]
+    assert "qwen2.5:7b" in names
+    assert "gemma3:27b" not in names
+    assert "llama3.1:70b" not in names
+    assert cat["hidden_count"] == len(model_catalog.MODELS) - len(names)
+
+
+def test_catalog_filter_by_capability():
+    from UI import model_catalog
+    vision = [m for m in model_catalog.MODELS if "vision" in m["capabilities"]]
+    assert vision and all(m["size_gb"] for m in vision)
+    assert "llava:7b" in [m["name"] for m in vision]

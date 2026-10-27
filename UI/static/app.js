@@ -25,7 +25,8 @@ const closeModalBtns = document.querySelectorAll('.close-modal');
 const personalityForm = document.getElementById('personalityForm');
 const newBotForm = document.getElementById('newBotForm');
 const settingsForm = document.getElementById('settingsForm');
-const marketplaceGrid = document.getElementById('marketplaceGrid');
+const localMcpGrid = document.getElementById('localMcpGrid');
+const remoteMcpGrid = document.getElementById('remoteMcpGrid');
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabContents = document.querySelectorAll('.tab-content');
 const modeOptions = document.getElementById('modeOptions');
@@ -177,6 +178,10 @@ async function openBotChat(botId) {
     const displayName = name.match(/bot$/i) ? name : `${name} Bot`;
     const chatStatus = document.querySelector('.chat-status');
     if (chatStatus) chatStatus.textContent = displayName;
+    // The sidebar already styles .bot-item.active — mark the open bot.
+    document.querySelectorAll('.bot-item').forEach(item => {
+        item.classList.toggle('active', item.dataset.botId === botId);
+    });
 
     // Fetch server health
     let healthHtml = "";
@@ -204,7 +209,7 @@ async function openBotChat(botId) {
 
     const infoDiv = document.createElement('div');
     infoDiv.className = 'bot-info';
-    infoDiv.innerHTML = `<strong>${displayName}</strong> ${bot.personality_id ? '(Personality: ' + bot.personality_id.substring(0,8) + ')' : ''} | Status: <span id="botStatus">${bot.status}</span>${healthHtml} ${bot.config.enabled ? `<button class="btn-disable" onclick="disableBot('${bot.id}')">Disable</button>` : `<button class="btn-delete" onclick="deleteBot('${bot.id}')">Delete</button> <button class="btn-enable" onclick="enableBot('${bot.id}')">Re-enable</button>`}`;
+    infoDiv.innerHTML = `<strong>${displayName}</strong> ${bot.personality_id ? '(Personality: ' + bot.personality_id.substring(0,8) + ')' : ''} | Status: <span id="botStatus">${bot.status}</span>${healthHtml} ${bot.config.enabled ? `<button class="btn-disable" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>` : `<button class="btn-delete" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button class="btn-enable" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`}`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
@@ -360,6 +365,8 @@ async function loadSettings() {
         document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
         document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
         document.getElementById('settingsRemoteModel').value = settings.llm?.remote_model || 'gpt-4o-mini';
+        const gitUrlInput = document.getElementById('settingsAgentsGitUrl');
+        if (gitUrlInput) gitUrlInput.value = settings.agents?.git_url || '';
         document.getElementById('settingsSchedulerEnabled').checked = settings.scheduler?.enabled !== false;
         document.getElementById('settingsSchedulerTick').value = settings.scheduler?.tick_seconds || 30;
     } catch (e) {
@@ -397,11 +404,13 @@ async function saveSettings() {
         body: JSON.stringify(settings)
     });
     const data = await response.json();
+    const statusEl = document.getElementById('settingsSaveStatus');
     if (data.success) {
-        alert('Settings saved');
-        closeModal(settingsModal);
+        // Inline confirmation, then close so the user actually sees it.
+        if (statusEl) statusEl.textContent = 'Settings saved ✓';
+        setTimeout(() => closeModal(settingsModal), 900);
     } else {
-        alert('Failed to save settings');
+        if (statusEl) statusEl.textContent = 'Failed to save settings.';
     }
 }
 
@@ -474,7 +483,7 @@ if (personalityForm) {
 if (settingsForm) {
     settingsForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const saveBtn = settingsForm.querySelector('.btn-save');
+        const saveBtn = document.getElementById('settingsSaveBtn');
         const originalText = saveBtn ? saveBtn.textContent : '';
         if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
         try {
@@ -509,6 +518,24 @@ function closeModal(modal) {
     modal.classList.remove('active');
 }
 
+// Bot-detail actions (delegated: the info panel is rebuilt per bot).
+if (chatArea) chatArea.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-bot-action]');
+    if (!btn) return;
+    const action = btn.dataset.botAction;
+    const id = btn.dataset.botId;
+    if (action === 'disable') disableBot(id);
+    else if (action === 'delete') deleteBot(id);
+    else if (action === 'enable') enableBot(id);
+});
+
+// Status pill opens Settings (it reports what Settings configures).
+const llmStatusPill = document.getElementById('llmStatusPill');
+if (llmStatusPill) llmStatusPill.addEventListener('click', () => {
+    loadSettings();
+    settingsModal.classList.add('active');
+});
+
 // Initialize application
 init();
 // ── LLM status (Ollama) ──────────────────────────────────────────────
@@ -525,19 +552,17 @@ async function loadLlmStatus() {
     const pill = document.getElementById('llmStatusPill');
     const line = document.getElementById('llmStatusLine');
     const banner = document.getElementById('llmBanner');
-    const select = document.getElementById('settingsInstalledModels');
-    const localModel = document.getElementById('settingsLocalModel');
     try {
         const response = await fetch(`${API_BASE}/api/llm/status`);
         const status = await response.json();
         let pillText, pillClass, bannerText = '';
         if (!status.running) {
             pillText = 'Ollama offline'; pillClass = 'bad';
-            bannerText = 'Ollama is offline — start it with `ollama serve`, then pull a model from Settings → Models.';
+            bannerText = 'Ollama is offline — start it with `ollama serve`, then pull a model from Settings → Local Models.';
             if (line) { line.textContent = status.error || 'Ollama is not reachable.'; line.className = 'llm-status bad'; }
         } else if (!status.configured_model_installed) {
             pillText = 'Ollama · model missing'; pillClass = 'warn';
-            bannerText = `Ollama is running, but '${status.configured_model}' is not installed — pull it from Settings → Models.`;
+            bannerText = `Ollama is running, but '${status.configured_model}' is not installed — pull it from Settings → Local Models.`;
             if (line) { line.textContent = bannerText; line.className = 'llm-status bad'; }
         } else {
             pillText = `Ollama · ${status.configured_model}`; pillClass = 'ok';
@@ -548,54 +573,191 @@ async function loadLlmStatus() {
             if (bannerText) { banner.style.display = 'block'; banner.textContent = bannerText; }
             else banner.style.display = 'none';
         }
-        if (select) {
-            const current = localModel ? localModel.value : status.configured_model;
-            select.innerHTML = status.models.length
-                ? status.models.map(m => `<option value="${escapeHtml(m)}"${m === current ? ' selected' : ''}>${escapeHtml(m)}</option>`).join('')
-                : '<option value="">(no models detected)</option>';
-        }
+        // The model browser (cards, not a select) renders from the same
+        // status payload; refresh it whenever status refreshes.
+        refreshModelBrowser(status);
     } catch (e) {
         if (pill) { pill.textContent = 'LLM status unknown'; pill.className = 'header-status warn'; }
         console.warn('Failed to load LLM status', e);
     }
 }
 
-// Model pull: POST starts a background job; poll until it lands.
-let pullPollTimer = null;
-async function pollPullStatus() {
-    const el = document.getElementById('pullStatus');
-    const btn = document.getElementById('pullModelBtn');
+// ── Model browser (Settings → LLM Provider) ──────────────────────────
+// Cards from /api/llm/catalog (sized to host RAM), green for installed,
+// click a card to pull, unload icon on loaded cards, and a dropdown on
+// loaded cards to fill the Primary / Secondary slots.
+let modelBrowserState = { catalog: null, installed: [], primary: '', secondary: '', filter: 'all' };
+
+async function refreshModelBrowser(status) {
+    const grid = document.getElementById('modelCatalogGrid');
+    const loadedGrid = document.getElementById('loadedModelsGrid');
+    if (!grid && !loadedGrid) return;
     try {
-        const response = await fetch(`${API_BASE}/api/llm/pull`);
-        const job = (await response.json()).job || {};
-        if (el) el.textContent = job.detail || '';
-        if (job.state === 'done' || job.state === 'error') {
-            if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-            if (btn) btn.disabled = false;
-            await loadLlmStatus();
-            if (job.state === 'done') {
-                const select = document.getElementById('settingsInstalledModels');
-                const localModel = document.getElementById('settingsLocalModel');
-                if (select) select.value = job.model;
-                if (localModel) localModel.value = job.model;
-            }
-        }
+        const [statusRes, catalogRes, settingsRes] = await Promise.all([
+            status ? Promise.resolve({ json: async () => status }) : fetch(`${API_BASE}/api/llm/status`),
+            fetch(`${API_BASE}/api/llm/catalog`),
+            fetch(`${API_BASE}/api/settings`),
+        ]);
+        const st = await statusRes.json();
+        const catalog = await catalogRes.json();
+        const settings = await settingsRes.json();
+        modelBrowserState.catalog = catalog;
+        modelBrowserState.installed = st.models || [];
+        modelBrowserState.primary = settings.llm?.local_model || '';
+        modelBrowserState.secondary = settings.llm?.secondary_model || '';
+        const localInput = document.getElementById('settingsLocalModel');
+        const secInput = document.getElementById('settingsSecondaryModel');
+        if (localInput) localInput.value = modelBrowserState.primary;
+        if (secInput) secInput.value = modelBrowserState.secondary;
+        renderModelBrowser();
     } catch (e) {
-        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-        if (btn) btn.disabled = false;
-        if (el) el.textContent = 'Pull status check failed.';
+        console.warn('Failed to load model browser', e);
     }
 }
 
-async function startPull() {
-    const input = document.getElementById('pullModelName');
-    const el = document.getElementById('pullStatus');
-    const btn = document.getElementById('pullModelBtn');
-    const model = (input ? input.value.trim() : '') ||
-        (document.getElementById('settingsLocalModel') || {}).value || '';
-    if (!model) { if (el) el.textContent = 'Enter a model name first.'; return; }
-    if (btn) btn.disabled = true;
-    if (el) el.textContent = 'Starting pull…';
+function renderModelBrowser() {
+    const { catalog, installed, primary, secondary, filter } = modelBrowserState;
+    const grid = document.getElementById('modelCatalogGrid');
+    const loadedGrid = document.getElementById('loadedModelsGrid');
+    const note = document.getElementById('catalogNote');
+    const linkBox = document.getElementById('ollamaSearchLink');
+    const chipsBox = document.getElementById('modelFilterChips');
+    if (!catalog) return;
+    const installedSet = new Set(installed);
+
+    if (chipsBox) {
+        const chips = ['all', ...(catalog.capabilities || [])];
+        chipsBox.innerHTML = chips.map(c =>
+            `<button type="button" class="chip${c === filter ? ' active' : ''}" data-chip="${c}">${c === 'all' ? 'All' : c}</button>`
+        ).join('');
+        chipsBox.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+            modelBrowserState.filter = chip.dataset.chip;
+            renderModelBrowser();
+        }));
+    }
+
+    // Loaded models: green, with unload + slot assignment.
+    if (loadedGrid) {
+        const bothFilled = Boolean(primary && secondary);
+        if (!installed.length) {
+            loadedGrid.innerHTML = '<p style="color: var(--color-muted);">Nothing loaded yet — pull a model below.</p>';
+        } else {
+            loadedGrid.innerHTML = installed.map(name => {
+                const isPrimary = name === primary;
+                const isSecondary = name === secondary;
+                let slotHtml = '';
+                if (isPrimary) {
+                    slotHtml = `<span class="mcp-badge mcp-badge-local">Primary</span>
+                        <button type="button" class="btn-icon" data-action="unset" data-slot="primary" data-model="${escapeHtml(name)}" title="Unset primary" aria-label="Unset primary model">&#10006;</button>`;
+                } else if (isSecondary) {
+                    slotHtml = `<span class="mcp-badge mcp-badge-local">Secondary</span>
+                        <button type="button" class="btn-icon" data-action="unset" data-slot="secondary" data-model="${escapeHtml(name)}" title="Unset secondary" aria-label="Unset secondary model">&#10006;</button>`;
+                } else if (!bothFilled) {
+                    // Dropdowns stay visible until BOTH slots are filled.
+                    slotHtml = `<select data-assign="${escapeHtml(name)}" aria-label="Assign model slot">
+                        <option value="">Assign…</option>
+                        <option value="primary">Primary</option>
+                        <option value="secondary">Secondary</option>
+                    </select>`;
+                }
+                return `<div class="model-card loaded">
+                    <div class="model-header">
+                        <span class="model-name">${escapeHtml(name)}</span>
+                        <span class="mcp-badge status-active">Loaded</span>
+                    </div>
+                    <div class="model-actions">
+                        ${slotHtml}
+                        <button type="button" class="btn-icon" data-action="unload" data-model="${escapeHtml(name)}" title="Unload model" aria-label="Unload model">&#9167;</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
+
+    // Catalog cards: green when already installed, click to pull otherwise.
+    if (grid) {
+        const shown = (catalog.models || []).filter(m =>
+            filter === 'all' || (m.capabilities || []).includes(filter));
+        grid.innerHTML = shown.map(m => {
+            const isInstalled = installedSet.has(m.name);
+            return `<div class="model-card${isInstalled ? ' loaded' : ''}"${isInstalled ? '' : ` data-pull="${escapeHtml(m.name)}"`}>
+                <div class="model-header">
+                    <span class="model-name">${escapeHtml(m.name)}</span>
+                    <span class="model-size">${m.size_gb} GB</span>
+                    ${isInstalled ? '<span class="mcp-badge status-active">Loaded</span>' : ''}
+                </div>
+                <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
+                <div class="model-blurb">${escapeHtml(m.blurb || '')}</div>
+                ${isInstalled ? '' : '<div class="model-pull-hint">Click to pull</div>'}
+            </div>`;
+        }).join('') || '<p style="color: var(--color-muted);">No models match this filter.</p>';
+    }
+
+    if (note) {
+        note.textContent = catalog.size_cap_gb
+            ? `Showing models up to ${catalog.size_cap_gb} GB (available RAM: ${catalog.ram_available_gb} GB).` +
+              (catalog.hidden_count ? ` ${catalog.hidden_count} larger model(s) hidden.` : '')
+            : 'Host RAM size unknown — showing all models.';
+    }
+    if (linkBox && catalog.ollama_search_url) {
+        linkBox.innerHTML = `<a href="${escapeHtml(catalog.ollama_search_url)}" target="_blank" rel="noopener">Browse all models on ollama.com</a>`;
+    }
+}
+
+// Delegated actions for both model grids (they re-render often).
+document.addEventListener('click', async (e) => {
+    const unloadBtn = e.target.closest('[data-action="unload"]');
+    if (unloadBtn) {
+        const model = unloadBtn.dataset.model;
+        if (!confirm(`Unload '${model}'? This deletes it from Ollama.`)) return;
+        await fetch(`${API_BASE}/api/llm/models/${encodeURIComponent(model)}`, { method: 'DELETE' });
+        await refreshModelBrowser();
+        await loadLlmStatus();
+        return;
+    }
+    const unsetBtn = e.target.closest('[data-action="unset"]');
+    if (unsetBtn) {
+        const patch = { llm: {} };
+        if (unsetBtn.dataset.slot === 'primary') patch.llm.local_model = '';
+        else patch.llm.secondary_model = '';
+        await fetch(`${API_BASE}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+        await refreshModelBrowser();
+        await loadLlmStatus();
+        return;
+    }
+    const card = e.target.closest('.model-card[data-pull]');
+    if (card && document.getElementById('modelCatalogGrid')?.contains(card)) {
+        openPullModal(card.dataset.pull);
+    }
+});
+document.addEventListener('change', async (e) => {
+    const select = e.target.closest('select[data-assign]');
+    if (!select || !select.value) return;
+    const model = select.dataset.assign;
+    const slot = select.value;
+    const patch = { llm: {} };
+    if (slot === 'primary') {
+        patch.llm.local_model = model;
+        if (modelBrowserState.secondary === model) patch.llm.secondary_model = '';
+    } else {
+        patch.llm.secondary_model = model;
+        if (modelBrowserState.primary === model) patch.llm.local_model = '';
+    }
+    await fetch(`${API_BASE}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    await refreshModelBrowser();
+    await loadLlmStatus();
+});
+
+// ── Pull modal: click a card → modal shows live pull progress ─────────
+let pullPollTimer = null;
+async function openPullModal(model) {
+    const modal = document.getElementById('pullModal');
+    const modelEl = document.getElementById('pullModalModel');
+    const statusEl = document.getElementById('pullModalStatus');
+    if (!modal) return;
+    if (modelEl) modelEl.textContent = model;
+    if (statusEl) statusEl.textContent = 'Starting pull…';
+    modal.classList.add('active');
     try {
         const response = await fetch(`${API_BASE}/api/llm/pull`, {
             method: 'POST',
@@ -604,26 +766,43 @@ async function startPull() {
         });
         const data = await response.json();
         if (!response.ok) {
-            if (el) el.textContent = data.error || 'Pull failed to start.';
-            if (btn) btn.disabled = false;
+            if (statusEl) statusEl.textContent = data.error || 'Pull failed to start.';
             return;
         }
-        if (el) el.textContent = data.job.detail || 'Pulling…';
+        if (statusEl) statusEl.textContent = data.job.detail || 'Pulling…';
         if (pullPollTimer) clearInterval(pullPollTimer);
-        pullPollTimer = setInterval(pollPullStatus, 2000);
-    } catch (e) {
-        if (el) el.textContent = `Pull failed: ${e.message}`;
-        if (btn) btn.disabled = false;
+        pullPollTimer = setInterval(pollPullModal, 2000);
+    } catch (err) {
+        if (statusEl) statusEl.textContent = `Pull failed: ${err.message}`;
     }
 }
-
-const pullBtn = document.getElementById('pullModelBtn');
-if (pullBtn) pullBtn.addEventListener('click', startPull);
-const installedSelect = document.getElementById('settingsInstalledModels');
-if (installedSelect) installedSelect.addEventListener('change', () => {
-    const localModel = document.getElementById('settingsLocalModel');
-    if (localModel && installedSelect.value) localModel.value = installedSelect.value;
+async function pollPullModal() {
+    const modal = document.getElementById('pullModal');
+    const statusEl = document.getElementById('pullModalStatus');
+    if (!modal || !modal.classList.contains('active')) {
+        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/llm/pull`);
+        const job = (await response.json()).job || {};
+        if (statusEl) statusEl.textContent = job.detail || '';
+        if (job.state === 'done' || job.state === 'error') {
+            if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+            await refreshModelBrowser();
+            await loadLlmStatus();
+        }
+    } catch (err) {
+        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
+        if (statusEl) statusEl.textContent = 'Pull status check failed.';
+    }
+}
+const pullModalClose = document.getElementById('pullModalClose');
+if (pullModalClose) pullModalClose.addEventListener('click', () => {
+    const modal = document.getElementById('pullModal');
+    if (modal) closeModal(modal);
 });
+
 if (settingsBtn) settingsBtn.addEventListener('click', loadLlmStatus);
 
 // Setup tab navigation
@@ -716,27 +895,56 @@ async function renderModeSelector() {
 // remote/cloud block shows only for local_cloud. Every lookup is guarded
 // so a missing group can never throw.
 let modeConfigsCache = {};
-const MODE_FIELDS_FALLBACK = {
-    local_local: ["local_model", "secondary_model"],
-    local_cloud: ["local_model", "secondary_base_url", "secondary_api_key", "secondary_model"],
-    local_remote_local: ["local_model", "secondary_base_url"],
-};
 
+function setLlmsCollapsed(collapsed) {
+    const body = document.getElementById('llmsBody');
+    const btn = document.getElementById('llmsCollapseBtn');
+    if (body) body.style.display = collapsed ? 'none' : '';
+    if (btn) {
+        btn.setAttribute('aria-expanded', String(!collapsed));
+        btn.innerHTML = collapsed ? '&#9654;' : '&#9650;';
+        btn.title = collapsed ? 'Expand local models' : 'Collapse local models';
+    }
+}
+const llmsCollapseBtn = document.getElementById('llmsCollapseBtn');
+if (llmsCollapseBtn) llmsCollapseBtn.addEventListener('click', () => {
+    const body = document.getElementById('llmsBody');
+    setLlmsCollapsed(!(body && body.style.display === 'none'));
+});
+
+// Mode sections: the LLMs browser collapses so the Cloud / Remote Local
+// section below the divider takes focus in those modes; Local + Local
+// hides the section entirely (the two slots above are the whole story).
 function updateModeUI(modeKey) {
-    const modes = Object.keys(modeConfigsCache).length ? modeConfigsCache : MODE_FIELDS_FALLBACK;
-    const fields = (modes[modeKey] && modes[modeKey].fields) || MODE_FIELDS_FALLBACK.local_local;
-    const show = (groupId, visible) => {
-        const el = document.getElementById(groupId);
+    const show = (id, visible) => {
+        const el = document.getElementById(id);
         if (el) el.style.display = visible ? '' : 'none';
     };
-    show('group-local-model', true);
-    show('group-secondary-model', fields.includes('secondary_model'));
-    show('group-secondary-base-url', fields.includes('secondary_base_url'));
-    show('group-secondary-api-key', fields.includes('secondary_api_key'));
-    const showRemote = modeKey === 'local_cloud';
-    show('group-remote-base-url', showRemote);
-    show('group-remote-api-key', showRemote);
-    show('group-remote-model', showRemote);
+    const isCloud = modeKey === 'local_cloud';
+    const isRemoteLocal = modeKey === 'local_remote_local';
+    const showSection = isCloud || isRemoteLocal;
+    show('modeSectionDivider', showSection);
+    show('modeSection', showSection);
+    const title = document.getElementById('modeSectionTitle');
+    const hint = document.getElementById('modeSectionHint');
+    if (title) title.textContent = isCloud ? 'Cloud' : 'Remote Local';
+    if (hint) hint.textContent = isCloud
+        ? 'When the local model fails, chat falls back to the cloud endpoint below (secondary endpoint first, remote settings as fallback).'
+        : 'When the local model fails, chat falls back to the Ollama host below.';
+    show('modeSubCloud', isCloud);
+    show('group-secondary-base-url', showSection);
+    show('group-secondary-api-key', isCloud);
+    show('modeSubRemote', isCloud);
+    show('group-remote-base-url', isCloud);
+    show('group-remote-api-key', isCloud);
+    show('group-remote-model', isCloud);
+    const secHint = document.getElementById('secondaryModelHint');
+    if (secHint) secHint.textContent = isCloud
+        ? 'Cloud model used when the local model fails.'
+        : isRemoteLocal
+        ? 'Model on the remote Ollama host.'
+        : 'Second local model, for redundancy or specialized tasks.';
+    setLlmsCollapsed(showSection);
 }
 
 async function saveMode(mode) {
@@ -755,204 +963,256 @@ async function saveMode(mode) {
 loadLlmStatus();
 
 // Render MCP Marketplace
-async function renderMCPMarketplace() {
-    if (!marketplaceGrid) return;
+// ── MCP Marketplace: Local (this host's MCP service) + Remote ────────
+// The old tab called /api/mcp/list, /api/mcp/import/<id> and
+// /api/mcp/disable/<id> — none of which existed — so it always failed,
+// and there was no way to add an MCP at all. These routes exist now.
+let remoteMcpCache = {};
 
+async function renderLocalMcps() {
+    const grid = document.getElementById('localMcpGrid');
+    if (!grid) return;
     try {
-        const response = await fetch(`${API_BASE}/api/mcp/list`);
+        const response = await fetch(`${API_BASE}/api/mcp/local`);
         const data = await response.json();
         const mcps = data.mcps || [];
-
-        let html = '';
-        mcps.forEach(mcp => {
-            const isRemote = mcp.type === 'remote';
-            const badgeClass = isRemote ? 'mcp-badge-remote' : 'mcp-badge-local';
-            const badgeText = isRemote ? 'Remote' : 'Local';
-
-            html += '\n                <div class="mcp-card" data-mcp-id="' + mcp.id + '">';
-            html += '\n                    <div class="mcp-header">';
-            html += '\n                        <span class="mcp-name">' + mcp.name + '</span>';
-            html += '\n                        <span class="mcp-badge ' + badgeClass + '">' + badgeText + '</span>';
-            html += '\n                    </div>';
-            html += '\n                    <div class="mcp-description">' + (mcp.description || '') + '</div>';
-            html += '\n                    <div class="mcp-actions">';
-            html += '\n                        <button class="btn-icon" data-mcp-action="import" data-mcp-id="' + mcp.id + '" title="Import" aria-label="Import MCP">&#8671;</button>';
-            html += '\n                        <button class="btn-icon" data-mcp-action="disable" data-mcp-id="' + mcp.id + '" title="Disable" aria-label="Disable MCP">&#10006;</button>';
-            html += '\n                    </div>';
-            html += '\n                </div>\n';
-        });
-
-        if (html === '') {
-            html = '<p style="color: var(--color-muted);">No MCPs found. Add new MCP below.</p>';
+        if (!mcps.length) {
+            grid.innerHTML = '<p style="color: var(--color-muted);">No local MCPs yet. Add one above.</p>';
+            return;
         }
+        grid.innerHTML = mcps.map(mcp => `
+            <div class="mcp-card">
+                <div class="mcp-header">
+                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
+                    <span class="mcp-badge mcp-badge-local">Local</span>
+                    ${mcp.enabled === false ? '<span class="mcp-badge status-inactive">Disabled</span>' : ''}
+                </div>
+                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
+                <div class="mcp-description">${escapeHtml(mcp.endpoint || '')} · ${escapeHtml(mcp.method || 'GET')}</div>
+                <div class="mcp-actions">
+                    <button class="btn-icon" data-mcp-action="${mcp.enabled === false ? 'enable' : 'disable'}" data-mcp-id="${escapeHtml(mcp.id)}" title="${mcp.enabled === false ? 'Enable' : 'Disable'}" aria-label="${mcp.enabled === false ? 'Enable MCP' : 'Disable MCP'}">${mcp.enabled === false ? '&#10003;' : '&#10006;'}</button>
+                    <button class="btn-icon" data-mcp-action="remove" data-mcp-id="${escapeHtml(mcp.id)}" title="Remove" aria-label="Remove MCP">&#128465;</button>
+                </div>
+            </div>`).join('');
+        grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
+            const action = btn.dataset.mcpAction;
+            const id = btn.dataset.mcpId;
+            if (action === 'remove') {
+                if (!confirm('Remove this MCP?')) return;
+                await fetch(`${API_BASE}/api/mcps/${encodeURIComponent(id)}`, { method: 'DELETE' });
+            } else {
+                await fetch(`${API_BASE}/api/mcp/${action}/${encodeURIComponent(id)}`, { method: 'POST' });
+            }
+            await renderLocalMcps();
+        }));
+    } catch (e) {
+        console.warn('Failed to load local MCPs', e);
+        grid.innerHTML = '<p style="color: var(--color-muted);">MCP service unreachable.</p>';
+    }
+}
 
-        marketplaceGrid.innerHTML = html;
+async function renderRemoteMcps() {
+    const grid = document.getElementById('remoteMcpGrid');
+    if (!grid) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/mcp/remote`);
+        const data = await response.json();
+        const mcps = data.mcps || [];
+        remoteMcpCache = {};
+        mcps.forEach(m => { remoteMcpCache[m.id] = m; });
+        grid.innerHTML = mcps.map(mcp => `
+            <div class="mcp-card">
+                <div class="mcp-header">
+                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
+                    <span class="mcp-badge mcp-badge-remote">Remote</span>
+                </div>
+                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
+                <div class="mcp-description">Source: ${mcp.source_url ? `<a href="${escapeHtml(mcp.source_url)}" target="_blank" rel="noopener">${escapeHtml(mcp.source)}</a>` : escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}</div>
+                <div class="mcp-actions">
+                    <button class="btn-secondary small" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use this</button>
+                    ${mcp.endpoint ? `<button class="btn-secondary small" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}">Import</button>` : ''}
+                </div>
+            </div>`).join('') || '<p style="color: var(--color-muted);">No remote MCPs found.</p>';
+        grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
+            const action = btn.dataset.mcpAction;
+            const entry = remoteMcpCache[btn.dataset.mcpId];
+            if (!entry) return;
+            if (action === 'use') {
+                prefillMcpForm(entry);
+            } else if (action === 'import') {
+                const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
+                const result = await res.json();
+                const statusEl = document.getElementById('mcpAddStatus');
+                if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
+                await renderLocalMcps();
+            }
+        }));
+    } catch (e) {
+        console.warn('Failed to load remote MCPs', e);
+        grid.innerHTML = '<p style="color: var(--color-muted);">Failed to load remote marketplace.</p>';
+    }
+}
 
-        document.querySelectorAll('.mcp-card').forEach(card => {
-            card.addEventListener('click', () => {
-                card.classList.toggle('selected');
-            });
-            card.querySelectorAll('[data-mcp-action]').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const action = btn.dataset.mcpAction;
-                    const id = btn.dataset.mcpId;
-                    if (action === 'import') await importMCP(id);
-                    else if (action === 'disable') await disableMCP(id);
-                });
-            });
+function prefillMcpForm(entry) {
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
+    set('mcpName', entry.name);
+    set('mcpDescription', entry.description);
+    set('mcpEndpoint', entry.endpoint);
+    set('mcpMethod', entry.method || 'GET');
+    const statusEl = document.getElementById('mcpAddStatus');
+    if (statusEl) statusEl.textContent = entry.endpoint
+        ? `'${entry.name}' ready — press Add MCP to register it.`
+        : `'${entry.name}' needs an endpoint URL — fill it in, then Add MCP.`;
+    const endpointEl = document.getElementById('mcpEndpoint');
+    if (endpointEl) endpointEl.focus();
+}
+
+const mcpAddBtn = document.getElementById('mcpAddBtn');
+if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
+    const nameEl = document.getElementById('mcpName');
+    const descEl = document.getElementById('mcpDescription');
+    const endpointEl = document.getElementById('mcpEndpoint');
+    const methodEl = document.getElementById('mcpMethod');
+    const statusEl = document.getElementById('mcpAddStatus');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const endpoint = endpointEl ? endpointEl.value.trim() : '';
+    if (!name || !endpoint) {
+        if (statusEl) statusEl.textContent = 'Name and endpoint URL are required.';
+        return;
+    }
+    try {
+        const response = await fetch(`${API_BASE}/api/mcps`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                description: descEl ? descEl.value.trim() : '',
+                endpoint,
+                method: methodEl ? methodEl.value : 'GET',
+            })
         });
-    } catch (e) {
-        console.warn('Failed to load MCP marketplace', e);
-        marketplaceGrid.innerHTML = '<p style="color: var(--color-muted);">Failed to load MCP marketplace.</p>';
-    }
-}
-
-// Import / disable an MCP via the settings service, then refresh the grid.
-async function importMCP(mcpId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/mcp/import/${mcpId}`, { method: 'POST' });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Import failed');
-        await renderMCPMarketplace();
+        if (!response.ok) throw new Error(result.error || 'Add failed');
+        if (statusEl) statusEl.textContent = `'${name}' added to Local MCPs.`;
+        if (nameEl) nameEl.value = '';
+        if (descEl) descEl.value = '';
+        if (endpointEl) endpointEl.value = '';
+        await renderLocalMcps();
     } catch (e) {
-        console.warn('Failed to import MCP', e);
-        alert('Failed to import MCP: ' + e.message);
+        if (statusEl) statusEl.textContent = `Add failed: ${e.message}`;
     }
-}
+});
 
-async function disableMCP(mcpId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/mcp/disable/${mcpId}`, { method: 'POST' });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Disable failed');
-        await renderMCPMarketplace();
-    } catch (e) {
-        console.warn('Failed to disable MCP', e);
-        alert('Failed to disable MCP: ' + e.message);
-    }
-}
-
-// Render Agent Personalities
+// ── Agent Personalities: local agents on by default, disableable ──────
+// The old render used agent.id / agent.status, which /api/agents/active
+// never returned — hence the literal "undefined" in every card — and its
+// inline onclick handlers were unclosed calls, so the buttons did nothing.
 async function renderAgentPersonalities() {
-    const personalityList = document.getElementById('personalityList');
-    if (!personalityList) return;
-
+    const list = document.getElementById('personalityList');
+    if (!list) return;
     try {
-        const envResponse = await fetch(`${API_BASE}/api/env/vars?prefix=AGENT_`);
-        const envData = await envResponse.json();
-        const agentVars = envData.vars || {};
-
-        const agentsResponse = await fetch(`${API_BASE}/api/agents/active`);
-        const agentsData = await agentsResponse.json();
-        const activeAgents = agentsData.agents || [];
-
+        const [agentsRes, envRes] = await Promise.all([
+            fetch(`${API_BASE}/api/agents/active`),
+            fetch(`${API_BASE}/api/env/vars?prefix=AGENT_`),
+        ]);
+        const agents = (await agentsRes.json()).agents || [];
+        const agentVars = ((await envRes.json()).vars) || {};
         let html = '';
-
-        if (activeAgents.length > 0) {
-            html += '<h4>Active Agents</h4>';
-            html += '<div class="agent-item">';
-            activeAgents.forEach(agent => {
-                html += '\n                    <div class="agent-card" data-agent-id="' + agent.id + '">';
-                html += '\n                        <div class="agent-header">';
-                html += '\n                            <span class="agent-name">' + agent.name + '</span>';
-                html += '\n                            <span class="agent-status ' + (agent.status === 'active' ? 'status-active' : 'status-inactive') + '">' + agent.status + '</span>';
-                html += '\n                        </div>';
-                html += '\n                        <div class="agent-controls">';
-                html += '\n                            <button class="btn-icon" onclick="toggleAgent(' + agent.id + '" title="' + (agent.status === 'active' ? 'Disable' : 'Enable') + '">';
-                html += '\n                                <span>' + (agent.status === 'active' ? '&#10006;' : '&#10003;') + '</span>';
-                html += '\n                            </button>';
-                html += '\n                            <button class="btn-icon" onclick="importAgentGit(' + agent.id + '" title="Import from Git">&#8635;</button>';
-                html += '\n                        </div>';
-                html += '\n                    </div>\n';
+        if (agents.length > 0) {
+            html += '<h4>Active Agents</h4><div class="agent-item">';
+            agents.forEach(agent => {
+                html += `
+                    <div class="agent-card" data-agent-id="${escapeHtml(agent.id)}">
+                        <div class="agent-header">
+                            <span class="agent-name">${escapeHtml(agent.name)}</span>
+                            <span class="mcp-badge ${agent.source === 'remote' ? 'mcp-badge-remote' : 'mcp-badge-local'}">${agent.source === 'remote' ? 'Remote' : 'Local'}</span>
+                            <span class="agent-status ${agent.active ? 'status-active' : 'status-inactive'}">${agent.active ? 'Active' : 'Disabled'}</span>
+                        </div>
+                        <div class="agent-description">${escapeHtml(agent.description || '')}</div>
+                        <div class="agent-controls">
+                            <button class="btn-icon" data-agent-action="toggle" data-agent-id="${escapeHtml(agent.id)}" title="${agent.active ? 'Disable' : 'Enable'}" aria-label="${agent.active ? 'Disable agent' : 'Enable agent'}">${agent.active ? '&#10006;' : '&#10003;'}</button>
+                            <button class="btn-icon" data-agent-action="import-git" data-agent-id="${escapeHtml(agent.id)}" title="Import from Git" aria-label="Import agent from Git">&#8635;</button>
+                        </div>
+                    </div>`;
             });
             html += '</div>';
+        } else {
+            html += '<p style="color: var(--color-muted);">No agents discovered.</p>';
         }
-
         if (Object.keys(agentVars).length > 0) {
-            html += '<h4>Personalities from Environment</h4>';
-            html += '<div class="personality-item">';
+            html += '<h4>Personalities from Environment</h4><div class="personality-item">';
             Object.entries(agentVars).forEach(([key, value]) => {
                 const name = key.replace('AGENT_', '').replace(/_/g, ' ');
-                html += '\n                    <div class="personality-card" data-personality-key="' + key + '">';
-                html += '\n                        <span class="personality-name">' + name + '</span>';
-                html += '\n                        <span class="personality-value">' + value.substring(0, 50) + (value.length > 50 ? '...' : '') + '</span>';
-                html += '\n                        <button class="btn-secondary small" onclick="disableAgentPersonality(' + key + ')">Disable</button>';
-                html += '\n                    </div>\n';
+                html += `
+                    <div class="personality-card" data-personality-key="${escapeHtml(key)}">
+                        <span class="personality-name">${escapeHtml(name)}</span>
+                        <span class="personality-value">${escapeHtml(value.substring(0, 50))}${value.length > 50 ? '...' : ''}</span>
+                        <button class="btn-secondary small" data-env-action="disable" data-env-key="${escapeHtml(key)}">Disable</button>
+                    </div>`;
             });
             html += '</div>';
         }
-
-        personalityList.innerHTML = html;
-        addPersonalityListeners();
+        list.innerHTML = html;
+        list.querySelectorAll('[data-agent-action]').forEach(btn => btn.addEventListener('click', async () => {
+            const action = btn.dataset.agentAction;
+            const id = btn.dataset.agentId;
+            if (action === 'toggle') {
+                await fetch(`${API_BASE}/api/agents/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
+                await renderAgentPersonalities();
+            } else if (action === 'import-git') {
+                if (!confirm('Import agent configuration from remote git source?')) return;
+                const response = await fetch(`${API_BASE}/api/agents/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
+                const result = await response.json();
+                const syncStatus = document.getElementById('agentsSyncStatus');
+                if (result.success) {
+                    if (syncStatus) syncStatus.textContent = 'Agent imported from Git.';
+                    await renderAgentPersonalities();
+                } else if (syncStatus) {
+                    syncStatus.textContent = 'Failed to import from Git: ' + (result.error || '');
+                }
+            }
+        }));
+        list.querySelectorAll('[data-env-action="disable"]').forEach(btn => btn.addEventListener('click', async () => {
+            if (!confirm('Disable this agent personality?')) return;
+            try {
+                const response = await fetch(`${API_BASE}/api/env/disable/${encodeURIComponent(btn.dataset.envKey)}`, { method: 'POST' });
+                const result = await response.json();
+                if (result.success) await renderAgentPersonalities();
+            } catch (e) {
+                console.warn('Failed to disable agent personality', e);
+            }
+        }));
     } catch (e) {
         console.warn('Failed to load agent personalities', e);
-        personalityList.innerHTML = '<p style="color: var(--color-muted);">Failed to load agent personalities.</p>';
+        list.innerHTML = '<p style="color: var(--color-muted);">Failed to load agent personalities.</p>';
     }
 }
 
-// Toggle agent active/inactive
-async function toggleAgent(agentId) {
+// Remote git repo for agents: save the URL, then re-discover (clone/pull).
+const agentsSyncBtn = document.getElementById('agentsSyncBtn');
+if (agentsSyncBtn) agentsSyncBtn.addEventListener('click', async () => {
+    const input = document.getElementById('settingsAgentsGitUrl');
+    const statusEl = document.getElementById('agentsSyncStatus');
+    const gitUrl = input ? input.value.trim() : '';
+    if (statusEl) statusEl.textContent = 'Saving repo and syncing…';
     try {
-        const response = await fetch(`${API_BASE}/api/agents/toggle/${agentId}`, { method: 'POST' });
-        const result = await response.json();
-        if (result.success) {
-            renderAgentPersonalities();
-        }
-    } catch (e) {
-        console.warn('Failed to toggle agent', e);
-    }
-}
-
-// Disable agent personality from env var
-async function disableAgentPersonality(varKey) {
-    if (confirm('Disable this agent personality?')) {
-        try {
-            const response = await fetch(`${API_BASE}/api/env/disable/${varKey}`, { method: 'POST' });
-            const result = await response.json();
-            if (result.success) {
-                renderAgentPersonalities();
-            }
-        } catch (e) {
-            console.warn('Failed to disable agent personality', e);
-        }
-    }
-}
-
-// Import agent from remote git source
-async function importAgentGit(agentId) {
-    if (confirm('Import agent configuration from remote git source?')) {
-        try {
-            const response = await fetch(`${API_BASE}/api/agents/import-git/${agentId}`, { method: 'POST' });
-            const result = await response.json();
-            if (result.success) {
-                alert('Agent imported from Git successfully');
-                renderAgentPersonalities();
-            } else {
-                alert('Failed to import from Git: ' + (result.error || ''));
-            }
-        } catch (e) {
-            console.warn('Failed to import agent from Git', e);
-            alert('Failed to import from Git');
-        }
-    }
-}
-
-// Add event listeners for personality controls
-function addPersonalityListeners() {
-    document.querySelectorAll('.personality-card .btn-secondary').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const card = btn.closest('.personality-card');
-            const key = card.dataset.personalityKey;
-            if (key) {
-                disableAgentPersonality(key);
-            }
+        await fetch(`${API_BASE}/api/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agents: { git_url: gitUrl } })
         });
-    });
-}
+        const response = await fetch(`${API_BASE}/api/agents/refresh`, { method: 'POST' });
+        const data = await response.json();
+        if (statusEl) statusEl.textContent = `Synced — ${(data.agents || []).length} agent(s) discovered.`;
+        await renderAgentPersonalities();
+    } catch (e) {
+        if (statusEl) statusEl.textContent = `Sync failed: ${e.message}`;
+    }
+});
 
 // Initialize MCP and Personalities
 async function initMCPAndPersonalities() {
-    await renderMCPMarketplace();
+    await renderLocalMcps();
+    await renderRemoteMcps();
     await renderAgentPersonalities();
 }

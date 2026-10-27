@@ -217,14 +217,48 @@ class LLMRouter:
         thread.start()
         return self.pull_job()
 
+    def delete_model(self, model: str) -> Dict[str, Any]:
+        """Unload (delete) a locally installed model."""
+        model = (model or "").strip()
+        if not model:
+            return _failure("No model name given.")
+        client = self.client
+        if client is None:
+            return _failure(
+                "Ollama is not reachable at "
+                f"{OLLAMA_HOST}. Start it, then try again."
+            )
+        try:
+            client.delete(model)
+            return {"success": True, "model": model}
+        except Exception as e:  # noqa: BLE001
+            return _failure(f"Could not delete '{model}': {e}")
+
     def _run_pull(self, model: str) -> None:
         try:
             client = self.client
             if client is None:
                 raise RuntimeError("ollama Python package is not installed")
             try:
-                for _chunk in client.pull(model, stream=True):
-                    pass
+                for chunk in client.pull(model, stream=True):
+                    # Surface download progress in the pull modal: the
+                    # ollama client streams {status, completed, total}.
+                    try:
+                        status = chunk.get("status") if isinstance(chunk, dict) else getattr(chunk, "status", None)
+                        total = chunk.get("total") if isinstance(chunk, dict) else getattr(chunk, "total", None)
+                        done = chunk.get("completed") if isinstance(chunk, dict) else getattr(chunk, "completed", None)
+                        if status and total:
+                            pct = int(done * 100 / total) if done else 0
+                            detail = f"{status} — {pct}%"
+                        elif status:
+                            detail = str(status)
+                        else:
+                            continue
+                        with self._pull_lock:
+                            self._pull_job = {"state": "running", "model": model,
+                                              "detail": detail}
+                    except Exception:  # noqa: BLE001 - progress is best-effort
+                        pass
             except TypeError:
                 # Clients that do not accept stream= (e.g. test doubles).
                 client.pull(model)

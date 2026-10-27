@@ -151,6 +151,8 @@ class AgentRegistry:
                 "description": cls.description,
                 "system_prompt": cls.system_prompt,
                 "model": cls.model,
+                # Remote agents load from modules named remote_<repo>_*
+                "source": "remote" if cls.__module__.startswith("remote_") else "local",
             }
             for cls in self._agents.values()
         ]

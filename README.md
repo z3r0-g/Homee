@@ -54,6 +54,15 @@
 - `GET /api/llm/status` — Ollama reachability, installed models, configured-model readiness
 - `POST /api/llm/pull` — Pull a model in the background (202 + job; 409 if a pull is running)
 - `GET /api/llm/pull` — Current model-pull job state
+- `GET /api/llm/catalog` — Curated model browser sized to host RAM
+- `DELETE /api/llm/models/{name}` — Unload a locally installed model
+- `GET /api/mcp/local` — MCPs registered on this host
+- `GET /api/mcp/remote` — Remote marketplace (built-ins + curated community)
+- `POST /api/mcp/import/{id}` — Copy a remote MCP into the local registry
+- `POST /api/mcp/enable/{id}` / `POST /api/mcp/disable/{id}` — Toggle a local MCP
+- `GET /api/agents/active` — Agents with id, source, and enabled state
+- `POST /api/agents/toggle/{id}` — Enable/disable an agent
+- `POST /api/agents/refresh` — Re-discover agents + import remote personalities
 - `GET /api/agents` — List available Agent personalities
 - `GET /api/health` — Health check
 
@@ -152,6 +161,19 @@ The root e2e suite starts both services in-process on ports 5123/5124 with isola
 
 Click "Settings" to configure:
 - LLM provider: local Ollama (default, priority #1) or remote cloud LLM (OpenAI-compatible)
-- Local model (e.g., `qwen2.5`)
-- Remote base URL, API key, and model
-- Scheduler enabled and tick interval
+- Local models: a card browser sized to host RAM (click a card to pull it;
+  loaded models show green, unload, and fill the Primary / Secondary slots)
+- LLM mode: Local + Local, Local + Cloud, or Local + Remote Local — the
+  Cloud / Remote Local section below the cards takes focus in those modes
+- MCP Marketplace: add your own MCPs, plus local and remote (mcpmarket.com
+  and community) listings
+- Agent Personalities: local agents on by default and disableable, plus a
+  remote git repo to sync agents and personalities from
+- Scheduler enabled and tick interval (a general setting, above the tabs)
+
+## Contributing agents
+
+Write your own agents and personalities in a git repo and load them from
+**Settings → Agent Personalities → Sync Agents**. See
+[CONTRIBUTE.md](CONTRIBUTE.md) for the agent contract, the personality
+JSON schema, and a repo layout you can copy.

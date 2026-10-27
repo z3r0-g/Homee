@@ -13,7 +13,7 @@
             Homee AI Agent Platform
         </div>
         <div class="header-actions">
-            <span class="header-status" id="llmStatusPill">Checking LLM…</span>
+            <span class="header-status" id="llmStatusPill" title="Open Settings">Checking LLM…</span>
         </div>
     </div>
 
@@ -126,6 +126,23 @@
                 <span class="close-modal">&times;</span>
             </div>
 
+            <!-- General settings: above the tabs, applies to all of them -->
+            <div class="form-group">
+                <label>Task Scheduler</label>
+                <label>
+                    <input type="checkbox" id="settingsSchedulerEnabled" checked>
+                    Scheduler Enabled
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Scheduler Tick (seconds)</label>
+                <input type="number" id="settingsSchedulerTick" value="30" min="5">
+            </div>
+            <div class="form-group">
+                <button type="submit" form="settingsForm" class="btn-save" id="settingsSaveBtn">Save Settings</button>
+                <div id="settingsSaveStatus" class="llm-status" aria-live="polite"></div>
+            </div>
+
             <!-- Tab Navigation -->
             <div class="tab-nav">
                 <button class="tab-btn active" data-tab="llm">LLM Provider</button>
@@ -146,73 +163,123 @@
 
                     <hr style="margin: 16px 0; border-color: var(--color-border);">
 
-                    <div class="form-group" id="group-local-model">
-                        <label>Local Model</label>
-                        <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
-                    </div>
-                    <div class="form-group" id="group-secondary-model">
-                        <label>Secondary Model</label>
-                        <input type="text" id="settingsSecondaryModel" placeholder="e.g. qwen2.5:7b">
-                    </div>
-                    <div class="form-group" id="group-secondary-base-url">
-                        <label>Secondary Base URL</label>
-                        <input type="text" id="settingsSecondaryBaseUrl" placeholder="http://localhost:11434">
-                    </div>
-                    <div class="form-group" id="group-secondary-api-key">
-                        <label>Secondary API Key</label>
-                        <input type="password" id="settingsSecondaryApiKey" autocomplete="current-password">
-                    </div>
-                    <div class="form-group">
-                        <label>Installed Ollama Models</label>
-                        <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
-                        <select id="settingsInstalledModels">
-                            <option value="">(no models detected)</option>
-                        </select>
-                        <div class="form-row">
-                            <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
-                            <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
+                    <!-- Local models: collapsible, so the Cloud / Remote
+                         Local section below can take focus in those modes -->
+                    <div class="form-group llms-section">
+                        <div class="llms-header">
+                            <label style="margin: 0;">Local Models</label>
+                            <button type="button" class="btn-icon" id="llmsCollapseBtn"
+                                    aria-expanded="true" aria-controls="llmsBody"
+                                    title="Collapse local models">&#9650;</button>
                         </div>
-                        <div id="pullStatus" class="llm-status" aria-live="polite"></div>
+                        <div id="llmsBody">
+                            <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
+                            <div id="modelFilterChips" class="chip-row"></div>
+                            <h5>Loaded on this host</h5>
+                            <div id="loadedModelsGrid" class="model-grid"></div>
+                            <h5>Available models</h5>
+                            <div id="modelCatalogGrid" class="model-grid"></div>
+                            <div id="catalogNote" class="llm-status"></div>
+                            <div id="ollamaSearchLink"></div>
+                            <div class="form-group" id="group-local-model">
+                                <label>Primary Model</label>
+                                <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
+                            </div>
+                            <div class="form-group" id="group-secondary-model">
+                                <label>Secondary Model</label>
+                                <input type="text" id="settingsSecondaryModel" placeholder="e.g. qwen2.5:7b">
+                                <small id="secondaryModelHint" class="llm-status"></small>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group" id="group-remote-base-url">
-                        <label>Remote Base URL</label>
-                        <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+
+                    <!-- Divider + mode section (Cloud / Remote Local only;
+                         hidden in Local + Local, where the slots above are
+                         the whole story) -->
+                    <hr id="modeSectionDivider" style="margin: 16px 0; border-color: var(--color-border);">
+                    <div id="modeSection">
+                        <h4 id="modeSectionTitle">Cloud</h4>
+                        <p id="modeSectionHint" class="llm-status"></p>
+                        <h5 id="modeSubCloud">Cloud endpoint</h5>
+                        <div class="form-group" id="group-secondary-base-url">
+                            <label>Secondary Base URL</label>
+                            <input type="text" id="settingsSecondaryBaseUrl" placeholder="http://localhost:11434">
+                        </div>
+                        <div class="form-group" id="group-secondary-api-key">
+                            <label>Secondary API Key</label>
+                            <input type="password" id="settingsSecondaryApiKey" autocomplete="current-password">
+                        </div>
+                        <h5 id="modeSubRemote">Remote fallback</h5>
+                        <div class="form-group" id="group-remote-base-url">
+                            <label>Remote Base URL</label>
+                            <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                        </div>
+                        <div class="form-group" id="group-remote-api-key">
+                            <label>Remote API Key</label>
+                            <input type="password" id="settingsRemoteApiKey" autocomplete="current-password">
+                        </div>
+                        <div class="form-group" id="group-remote-model">
+                            <label>Remote Model</label>
+                            <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
+                        </div>
                     </div>
-                    <div class="form-group" id="group-remote-api-key">
-                        <label>Remote API Key</label>
-                        <input type="password" id="settingsRemoteApiKey" autocomplete="current-password">
-                    </div>
-                    <div class="form-group" id="group-remote-model">
-                        <label>Remote Model</label>
-                        <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="settingsSchedulerEnabled" checked>
-                            Scheduler Enabled
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>Scheduler Tick (seconds)</label>
-                        <input type="number" id="settingsSchedulerTick" value="30" min="5">
-                    </div>
-                    <button type="submit" class="btn-save">Save Settings</button>
                 </form>
             </div>
 
             <div class="tab-content" id="tab-mcp">
                 <div class="form-group">
-                    <label>MCP Marketplace</label>
-                    <div id="marketplaceGrid" class="marketplace-grid"></div>
+                    <label>Add new MCP</label>
+                    <input type="text" id="mcpName" placeholder="Name (e.g. My API)" aria-label="MCP name">
+                    <input type="text" id="mcpDescription" placeholder="Description" aria-label="MCP description">
+                    <input type="text" id="mcpEndpoint" placeholder="Endpoint URL (e.g. https://api.example.com)" aria-label="MCP endpoint URL">
+                    <select id="mcpMethod" aria-label="MCP method">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                    </select>
+                    <button type="button" class="btn-secondary" id="mcpAddBtn">Add MCP</button>
+                    <div id="mcpAddStatus" class="llm-status"></div>
+                </div>
+                <div class="form-group">
+                    <label>Local MCPs</label>
+                    <div id="localMcpGrid" class="marketplace-grid"></div>
+                </div>
+                <div class="form-group">
+                    <label>Remote Marketplace</label>
+                    <div id="remoteMcpGrid" class="marketplace-grid"></div>
+                    <div class="llm-status">More servers at
+                        <a href="https://mcpmarket.com" target="_blank" rel="noopener">mcpmarket.com</a>
+                        and other community marketplaces — add any of them with the form above.
+                    </div>
                 </div>
             </div>
 
             <div class="tab-content" id="tab-personalities">
                 <div class="form-group">
+                    <label>Remote Agent Repo (git URL)</label>
+                    <div class="form-row">
+                        <input type="text" id="settingsAgentsGitUrl" placeholder="https://github.com/you/my-agents.git">
+                        <button type="button" class="btn-secondary" id="agentsSyncBtn">Sync Agents</button>
+                    </div>
+                    <div id="agentsSyncStatus" class="llm-status"></div>
+                </div>
+                <div class="form-group">
                     <label>Agent Personalities</label>
                     <div id="personalityList" class="personality-list"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- MODEL PULL MODAL -->
+    <div id="pullModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Pulling model</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <p id="pullModalModel" class="llm-status"></p>
+            <div id="pullModalStatus" class="llm-status" aria-live="polite"></div>
+            <button type="button" class="btn-secondary" id="pullModalClose">Close</button>
         </div>
     </div>
 

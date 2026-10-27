@@ -190,3 +190,130 @@ def test_settings_save_preserves_mode_and_git_url(client):
 def test_modes_rejects_unknown_mode(client):
     resp = client.post("/api/settings/modes", json={"mode": "bogus"})
     assert resp.status_code == 400
+
+
+# ── Settings redesign: catalog, model delete, MCP, agents ────────────
+
+def test_llm_catalog_shape(client):
+    resp = client.get("/api/llm/catalog")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["models"] and "ollama_search_url" in data
+    assert "thinking" in data["capabilities"] and "vision" in data["capabilities"]
+    assert all("size_gb" in m and "capabilities" in m for m in data["models"])
+
+
+class _FakeDeleteRouter:
+    def __init__(self):
+        self.deleted = []
+
+    def delete_model(self, model):
+        self.deleted.append(model)
+        return {"success": True, "model": model}
+
+
+def test_llm_delete_model_route(client, monkeypatch):
+    import UI.routes.settings as settings_routes
+    fake = _FakeDeleteRouter()
+    monkeypatch.setattr(settings_routes, "llm_router", fake)
+    resp = client.delete("/api/llm/models/qwen2.5%3A7b")
+    assert resp.status_code == 200
+    assert resp.get_json()["success"] is True
+    assert fake.deleted == ["qwen2.5:7b"]
+
+
+def _mcp_proxy_stub(method, path, json_body=None):
+    if method == "GET" and path == "/api/mcps":
+        return {"mcps": [{"id": "local1", "name": "Local One",
+                          "description": "d", "endpoint": "https://x.example",
+                          "method": "GET"}]}, 200
+    if method == "GET" and path == "/api/mcp/marketplace":
+        return {"mcps": [{"id": "built1", "name": "Built One",
+                          "description": "d"}]}, 200
+    if method == "POST" and path == "/api/mcps":
+        return {"success": True, "mcp": json_body}, 200
+    if method == "PUT":
+        return {"success": True}, 200
+    return {"error": "not found"}, 404
+
+
+def test_mcp_local_defaults_enabled(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.get("/api/mcp/local")
+    assert resp.status_code == 200
+    mcps = resp.get_json()["mcps"]
+    assert mcps[0]["enabled"] is True and mcps[0]["type"] == "local"
+
+
+def test_mcp_remote_merges_curated_and_builtin(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.get("/api/mcp/remote")
+    assert resp.status_code == 200
+    ids = [m["id"] for m in resp.get_json()["mcps"]]
+    assert "jsonplaceholder" in ids  # curated, no-auth entry
+    assert "built1" in ids  # proxied built-in entry
+
+
+def test_mcp_import_copies_remote_entry(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.post("/api/mcp/import/jsonplaceholder")
+    assert resp.status_code == 200
+    assert resp.get_json()["mcp"]["endpoint"] == "https://jsonplaceholder.typicode.com"
+
+
+def test_mcp_disable_proxies_put(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    seen = {}
+    def stub(method, path, json_body=None):
+        seen.update(method=method, path=path, body=json_body)
+        return {"success": True}, 200
+    monkeypatch.setattr(mcps_routes, "_proxy", stub)
+    resp = client.post("/api/mcp/disable/local1")
+    assert resp.status_code == 200
+    assert seen["method"] == "PUT" and seen["body"] == {"enabled": False}
+
+
+def test_agents_active_has_id_and_active(client):
+    resp = client.get("/api/agents/active")
+    assert resp.status_code == 200
+    agents = resp.get_json()["agents"]
+    assert agents, "expected the real local agents to be discovered"
+    for agent in agents:
+        assert agent["id"] == agent["name"]
+        assert agent["active"] is True  # local agents on by default
+        assert agent["source"] == "local"
+
+
+def test_agents_toggle_disables_then_reenables(client):
+    from urllib.parse import quote
+    name = client.get("/api/agents/active").get_json()["agents"][0]["name"]
+    resp = client.post(f"/api/agents/toggle/{quote(name, safe='')}")
+    assert resp.status_code == 200
+    assert resp.get_json()["active"] is False  # first toggle disables
+    agents = client.get("/api/agents/active").get_json()["agents"]
+    assert [a for a in agents if a["name"] == name][0]["active"] is False
+    resp = client.post(f"/api/agents/toggle/{quote(name, safe='')}")
+    assert resp.get_json()["active"] is True
+
+
+def test_agents_refresh_imports_remote_personality_json(client, tmp_path, monkeypatch):
+    import json
+    import Agents.registry as registry
+    remote_root = tmp_path / "remote"
+    repo = remote_root / "my-agents"
+    repo.mkdir(parents=True)
+    (repo / "librarian.json").write_text(json.dumps({
+        "name": "Librarian",
+        "description": "Precise answers.",
+        "system_prompt": "You are a careful librarian.",
+    }))
+    monkeypatch.setattr(registry, "REMOTE_DIR", remote_root)
+    resp = client.post("/api/agents/refresh")
+    assert resp.status_code == 200
+    assert resp.get_json()["personalities_imported"] == 1
+    data = client.get("/api/personalities").get_json()
+    names = [p["name"] for p in data["personalities"]]
+    assert "Librarian" in names

@@ -1,0 +1,115 @@
+# Contributing agents to Homee
+
+Homee discovers agents from two places, and both work the same way: put
+files in a directory, and Homee scans them.
+
+- **Local:** `Agents/local/*.py` in this repo (scanned on startup).
+- **Remote:** any public git repo, synced from the UI — open **Settings →
+  Agent Personalities**, paste the repo URL, and press **Sync Agents**.
+  Homee clones it to `Agents/remote/<repo-name>` (depth 1) and pulls
+  `--ff-only` on every re-sync.
+
+A repo can ship **agent Python scripts**, **personality JSON files**, or
+both. Files whose names start with `_` are skipped.
+
+> **Trust note:** agent `.py` files are imported and executed in-process.
+> Only sync repos you trust, the same way you would only install software
+> you trust.
+
+## Repo layout
+
+```
+my-agents/
+├── weather.py              # an AgentBase subclass (code agent)
+├── librarian.json          # a personality (data only)
+└── README.md               # what your agents do (optional, recommended)
+```
+
+## Agent scripts (`.py`)
+
+Subclass `AgentBase` from `Agents/app.py`. Homee finds every subclass in
+every scanned `.py` file — one file may hold several agents.
+
+```python
+from Agents.app import AgentBase
+
+class TideAgent(AgentBase):
+    name = "Tide Agent"
+    description = "Harbour tide times and warnings."
+    system_prompt = (
+        "You are a harbour assistant. Answer tide questions briefly "
+        "and always give the next high and low tide."
+    )
+    model = "qwen2.5:7b"  # use a full tag: bare "qwen2.5" resolves to
+                           # :latest, which an installed qwen2.5:7b does
+                           # NOT satisfy, and first chat will fail.
+```
+
+The fields that matter:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Display name. Also the agent's id in the UI and the toggle/disable key. |
+| `description` | One line, shown on the agent card. |
+| `system_prompt` | The system prompt every chat turn starts with. |
+| `model` | Ollama model for this agent (defaults to the platform default). |
+| `tools` | Optional list of plain Python callables. Each becomes an Ollama tool; the function name and docstring are what the model sees, so document them well. |
+
+You normally do not override `execute()` — the base implementation builds
+the system + history + user messages, calls Ollama with your tools, and
+returns an `AgentResult`. Override it only when an agent needs custom
+control flow (for example, calling an MCP before answering).
+
+Keep agent modules dependency-light: the standard library, `ollama`, and
+`Agents.app` are safe. Anything else must be installed on the host or the
+module is skipped (the skip is logged, not fatal).
+
+## Personality JSON files
+
+A personality is data, not code: a name, a system prompt, and optional
+skills/abilities. It appears in the **New Bot** personality picker and in
+**Settings → Agent Personalities** after a sync.
+
+```json
+{
+  "id": "librarian",
+  "name": "Librarian",
+  "description": "Precise answers with sources, no guessing.",
+  "skills": ["research", "summarizing"],
+  "abilities": ["cite-sources"],
+  "system_prompt": "You are a careful librarian. If you do not know something, say so, and never invent a citation."
+}
+```
+
+Rules:
+
+- `name` is required. `id` defaults to the file stem (`librarian.json` →
+  `librarian`) when omitted.
+- A file may also contain a **list** of such objects to ship several
+  personalities in one file.
+- Unknown keys are ignored; missing `description`, `skills`, and
+  `abilities` default to empty.
+- Re-syncing **upserts by id**: edit a personality in your repo, press
+  **Sync Agents** again, and Homee picks up the edit.
+
+## Loading your repo in Homee
+
+1. Push the repo somewhere Homee can clone (GitHub, Gitea, a local git
+   server — anything `git clone` understands).
+2. Open Homee → **Settings → Agent Personalities**.
+3. Paste the repo URL into **Remote Agent Repo** and press **Sync Agents**.
+4. Your agents appear under **Active Agents** (local agents are enabled
+   by default; the ✕ button disables any agent, the ✓ re-enables it),
+   and your personalities appear in the **New Bot** picker.
+5. Create a bot, pick the agent or personality, and chat.
+
+To test locally before pushing, drop the same files into `Agents/local/`
+and restart the UI service — discovery runs on startup.
+
+## Checklist before sharing a repo
+
+- [ ] Every agent has a distinct `name` (collisions overwrite silently).
+- [ ] Every `model` uses a full tag (`qwen2.5:7b`, not `qwen2.5`).
+- [ ] Agent modules import cleanly with only stdlib + `ollama` + `Agents.app`.
+- [ ] Personality JSON parses (`python -m json.tool your-file.json`).
+- [ ] A README says what each agent does and what model it expects.

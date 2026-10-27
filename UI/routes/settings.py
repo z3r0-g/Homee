@@ -157,6 +157,22 @@ def llm_pull_status():
     return jsonify({"job": llm_router.pull_job()})
 
 
+@settings_bp.route("/api/llm/catalog", methods=["GET"])
+def llm_catalog():
+    """Curated model browser: entries sized to this host's available RAM."""
+    from ..model_catalog import catalog
+    return jsonify(catalog())
+
+
+@settings_bp.route("/api/llm/models/<path:model>", methods=["DELETE"])
+def llm_delete_model(model):
+    """Unload (delete) a locally installed model."""
+    result = llm_router.delete_model(model)
+    if result.get("success"):
+        return jsonify(result)
+    return jsonify({"error": result.get("error", "Delete failed")}), 502
+
+
 @settings_bp.route("/api/settings/modes", methods=["GET"])
 def get_modes():
     """Return mode configurations for the UI."""

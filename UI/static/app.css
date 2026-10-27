@@ -460,6 +460,14 @@ button,
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
     -webkit-font-smoothing: antialiased;
+    /* The settings modal scrolls; keep the tabs reachable. */
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+#llmStatusPill {
+    cursor: pointer;
 }
 
 .tab-btn {
@@ -768,4 +776,169 @@ textarea:focus-visible {
     *, *::before, *::after {
         transition: none !important;
     }
+}
+
+/* ── Settings redesign: model browser, MCP sections, agent cards ───── */
+
+/* Icon buttons were unstyled (white UA default on the dark theme). */
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    font-size: 1rem;
+    cursor: pointer;
+}
+.btn-icon:hover {
+    background: var(--color-surface-2);
+    border-color: var(--color-primary);
+}
+.btn-secondary.small {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+}
+
+/* Horizontal form row (git sync, MCP add form rows). */
+.form-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.form-row input[type="text"],
+.form-row select {
+    flex: 1;
+}
+
+/* Collapsible Local Models section. */
+.llms-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+/* Capability filter chips. */
+.chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0 12px;
+}
+.chip {
+    padding: 4px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+.chip.active {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--color-primary-light);
+}
+
+/* Model cards: green left border + tint when loaded on this host. */
+.model-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.model-card {
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--color-surface-2);
+    cursor: pointer;
+}
+.model-card.loaded {
+    border-left: 3px solid var(--color-success);
+    background: var(--color-surface-3);
+    cursor: default;
+}
+.model-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.model-name {
+    font-weight: 600;
+}
+.model-size {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+}
+.model-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 6px 0;
+}
+.tag {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--color-surface-3);
+    color: var(--color-muted);
+    font-size: 0.75rem;
+}
+.model-blurb {
+    color: var(--color-muted);
+    font-size: 0.9rem;
+}
+.model-pull-hint {
+    margin-top: 8px;
+    color: var(--color-primary);
+    font-size: 0.85rem;
+}
+.model-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+/* Agent cards: children were unstyled, and status badges need color. */
+.agent-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.agent-name {
+    font-weight: 600;
+}
+.agent-status.status-active {
+    color: var(--color-success);
+}
+.agent-status.status-inactive {
+    color: var(--color-muted);
+}
+.agent-description {
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    margin: 4px 0;
+}
+.agent-controls {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Mode section below the divider. */
+#modeSection h4 {
+    margin: 0 0 4px;
+}
+#modeSection h5 {
+    margin: 12px 0 4px;
+    color: var(--color-muted);
 }
