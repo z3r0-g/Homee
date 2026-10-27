@@ -36,9 +36,9 @@ async function init() {
     await loadBots();
     await loadPersonalitiesForNewBot();
     await loadSettings();
-    await loadMarketplace();
     setupTabNavigation();
     renderModeSelector();
+    await initMCPAndPersonalities();
 }
 
 // Load bots from API
@@ -374,8 +374,10 @@ async function loadSettings() {
     try {
         const response = await fetch(`${API_BASE}/api/settings`);
         const settings = await response.json();
-        document.getElementById('settingsLlmProvider').value = settings.llm?.provider || 'local';
         document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5:7b';
+        document.getElementById('settingsSecondaryModel').value = settings.llm?.secondary_model || '';
+        document.getElementById('settingsSecondaryBaseUrl').value = settings.llm?.secondary_base_url || '';
+        document.getElementById('settingsSecondaryApiKey').value = settings.llm?.secondary_api_key || '';
         
         // Load LLM mode
         if (settings.llm?.mode) {
@@ -398,8 +400,10 @@ async function loadSettings() {
 async function saveSettings() {
     const settings = {
         llm: {
-            provider: document.getElementById('settingsLlmProvider').value,
             local_model: document.getElementById('settingsLocalModel').value,
+            secondary_model: document.getElementById('settingsSecondaryModel').value,
+            secondary_base_url: document.getElementById('settingsSecondaryBaseUrl').value,
+            secondary_api_key: document.getElementById('settingsSecondaryApiKey').value,
             remote_base_url: document.getElementById('settingsRemoteBaseUrl').value,
             remote_api_key: document.getElementById('settingsRemoteApiKey').value,
             remote_model: document.getElementById('settingsRemoteModel').value,
@@ -666,6 +670,7 @@ async function renderModeSelector() {
         const data = await response.json();
         const modes = Object.entries(data.modes || {});
         const currentMode = data.current_mode || 'local_local';
+        modeConfigsCache = data.modes || {};
 
         // Set current mode in settings
         if (settings_llmMode) settings_llmMode.value = currentMode;
@@ -689,8 +694,10 @@ async function renderModeSelector() {
 
         modeOptions.innerHTML = html;
 
-        // Add click listeners
-        modeOptions.querySelectorAll(".mode-switch:not(.mode-switch-inactive)").forEach(switchEl => {
+        // Add click listeners to every switch (an inactive switch is the
+        // one the user wants to click; the old selector only matched the
+        // already-active switch, so switching did nothing).
+        modeOptions.querySelectorAll(".mode-switch").forEach(switchEl => {
             switchEl.addEventListener("click", () => {
                 const modeKey = switchEl.dataset.mode;
                 if (settings_llmMode) settings_llmMode.value = modeKey;
@@ -701,13 +708,17 @@ async function renderModeSelector() {
                 // Save mode
                 saveMode(modeKey);
 
-                // Reset other switches to inactive, activate clicked
-                modeOptions.querySelectorAll(".mode-switch").forEach(s => s.classList.remove("mode-switch-active"));
-                modeOptions.querySelectorAll(".mode-switch-inactive").forEach(s => s.classList.add("mode-switch-inactive"));
+                // Reset all switches to inactive, then activate clicked
+                modeOptions.querySelectorAll(".mode-switch").forEach(s => {
+                    s.classList.remove("mode-switch-active");
+                    s.classList.add("mode-switch-inactive");
+                });
                 switchEl.classList.add("mode-switch-active");
                 switchEl.classList.remove("mode-switch-inactive");
             });
         });
+        // Reflect the current mode in the form right away.
+        updateModeUI(currentMode);
 
     } catch (e) {
         console.warn("Failed to load modes", e);
@@ -716,39 +727,32 @@ async function renderModeSelector() {
 }
 
 
+// Show only the form fields the active mode actually uses. Field lists
+// come from GET /api/settings/modes (the backend's MODE_CONFIGS); the
+// remote/cloud block shows only for local_cloud. Every lookup is guarded
+// so a missing group can never throw.
+let modeConfigsCache = {};
+const MODE_FIELDS_FALLBACK = {
+    local_local: ["local_model", "secondary_model"],
+    local_cloud: ["local_model", "secondary_base_url", "secondary_api_key", "secondary_model"],
+    local_remote_local: ["local_model", "secondary_base_url"],
+};
+
 function updateModeUI(modeKey) {
-    const modeConfigs = {
-        local_local: {
-            secondaryLabel: 'Secondary Model (optional)',
-            secondaryPlaceholder: 'e.g. qwen2.5:7b',
-            showRemote: false,
-            showSecondaryModel: true
-        },
-        local_cloud: {
-            secondaryLabel: 'Cloud API Key',
-            secondaryPlaceholder: 'Enter API key',
-            showRemote: true,
-            showSecondaryModel: true
-        },
-        local_remote_local: {
-            secondaryLabel: 'Remote Ollama URL',
-            secondaryPlaceholder: 'http://localhost:11434',
-            showRemote: true,
-            showSecondaryModel: false
-        }
+    const modes = Object.keys(modeConfigsCache).length ? modeConfigsCache : MODE_FIELDS_FALLBACK;
+    const fields = (modes[modeKey] && modes[modeKey].fields) || MODE_FIELDS_FALLBACK.local_local;
+    const show = (groupId, visible) => {
+        const el = document.getElementById(groupId);
+        if (el) el.style.display = visible ? '' : 'none';
     };
-    
-    const cfg = modeConfigs[modeKey] || modeConfigs.local_local;
-    
-    // Update remote fields visibility
-    const remoteGroup = document.querySelector('div.form-group:has(label:contains("Remote Base URL"))');
-    if (remoteGroup) {
-        if (cfg.showRemote) {
-            remoteGroup.style.display = 'block';
-        } else {
-            remoteGroup.style.display = 'none';
-        }
-    }
+    show('group-local-model', true);
+    show('group-secondary-model', fields.includes('secondary_model'));
+    show('group-secondary-base-url', fields.includes('secondary_base_url'));
+    show('group-secondary-api-key', fields.includes('secondary_api_key'));
+    const showRemote = modeKey === 'local_cloud';
+    show('group-remote-base-url', showRemote);
+    show('group-remote-api-key', showRemote);
+    show('group-remote-model', showRemote);
 }
 
 async function saveMode(mode) {
@@ -788,8 +792,8 @@ async function renderMCPMarketplace() {
             html += '\n                    </div>';
             html += '\n                    <div class="mcp-description">' + (mcp.description || '') + '</div>';
             html += '\n                    <div class="mcp-actions">';
-            html += '\n                        <button class="btn-icon" onclick="importMCP(' + mcp.id + '" title="Import">&#8671;</button>';
-            html += '\n                        <button class="btn-icon" onclick="disableMCP(' + mcp.id + '" title="Disable">&#10006;</button>';
+            html += '\n                        <button class="btn-icon" data-mcp-action="import" data-mcp-id="' + mcp.id + '" title="Import">&#8671;</button>';
+            html += '\n                        <button class="btn-icon" data-mcp-action="disable" data-mcp-id="' + mcp.id + '" title="Disable">&#10006;</button>';
             html += '\n                    </div>';
             html += '\n                </div>\n';
         });
@@ -804,9 +808,48 @@ async function renderMCPMarketplace() {
             card.addEventListener('click', () => {
                 card.classList.toggle('selected');
             });
+            card.querySelectorAll('[data-mcp-action]').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const action = btn.dataset.mcpAction;
+                    const id = btn.dataset.mcpId;
+                    if (action === 'import') await importMCP(id);
+                    else if (action === 'disable') await disableMCP(id);
+                });
+            });
         });
+    } catch (e) {
+        console.warn('Failed to load MCP marketplace', e);
+        marketplaceGrid.innerHTML = '<p style="color: var(--color-muted);">Failed to load MCP marketplace.</p>';
+    }
+}
 
-    // Render Agent Personalities
+// Import / disable an MCP via the settings service, then refresh the grid.
+async function importMCP(mcpId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/mcp/import/${mcpId}`, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Import failed');
+        await renderMCPMarketplace();
+    } catch (e) {
+        console.warn('Failed to import MCP', e);
+        alert('Failed to import MCP: ' + e.message);
+    }
+}
+
+async function disableMCP(mcpId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/mcp/disable/${mcpId}`, { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Disable failed');
+        await renderMCPMarketplace();
+    } catch (e) {
+        console.warn('Failed to disable MCP', e);
+        alert('Failed to disable MCP: ' + e.message);
+    }
+}
+
+// Render Agent Personalities
 async function renderAgentPersonalities() {
     const personalityList = document.getElementById('personalityList');
     if (!personalityList) return;

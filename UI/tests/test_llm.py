@@ -122,9 +122,12 @@ def test_chat_does_not_fall_back_to_unconfigured_remote(_tmp_settings):
 
 
 def test_chat_falls_back_to_configured_remote(_tmp_settings):
+    # Remote fallback requires local_cloud mode (the mode switcher governs
+    # fallback; local_local must NOT fall back to remote even if configured).
     import json
     _tmp_settings.write_text(json.dumps(
-        {"llm": {"remote_base_url": "https://example.invalid/v1"}}))
+        {"llm": {"mode": "local_cloud",
+                 "remote_base_url": "https://example.invalid/v1"}}))
     router = LLMRouter(client=FakeClient(
         chat_error=Exception("Connection refused")))
     router.query_remote = lambda *a, **k: {
@@ -157,3 +160,59 @@ def test_pull_empty_model_is_an_error(_tmp_settings):
     router = LLMRouter(client=FakeClient())
     job = router.start_pull("   ")
     assert job["state"] == "error"
+
+
+def test_chat_local_local_does_not_fall_back_to_remote(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_local",
+                 "remote_base_url": "https://example.invalid/v1"}}))
+    router = LLMRouter(client=FakeClient(
+        chat_error=Exception("Connection refused")))
+    calls = []
+    router.query_remote = lambda *a, **k: calls.append(1) or {
+        "message": {"role": "assistant", "content": "remote", "tool_calls": []}}
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert calls == []
+    assert "not reachable" in result["message"]["content"]
+
+
+def test_chat_local_local_falls_back_to_secondary_model(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_local", "secondary_model": "llama3.1:8b"}}))
+    client = FakeClient(chat_error=Exception("model 'qwen2.5:7b' not found"))
+
+    def chat_then_ok(model, messages, tools=None):
+        if model == "llama3.1:8b":
+            from types import SimpleNamespace
+            return SimpleNamespace(
+                message=SimpleNamespace(role="assistant",
+                                        content="secondary ok",
+                                        tool_calls=[]))
+        raise Exception("model 'qwen2.5:7b' not found")
+
+    client.chat = chat_then_ok
+    router = LLMRouter(client=client)
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert result["message"]["content"] == "secondary ok"
+
+
+def test_chat_local_remote_local_falls_back_to_secondary_host(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_remote_local",
+                 "secondary_base_url": "http://otherhost:11434"}}))
+    seen_hosts = []
+
+    def factory(host):
+        seen_hosts.append(host)
+        if host == "http://otherhost:11434":
+            return FakeClient(chat_text="secondary host ok")
+        return FakeClient(chat_error=Exception("Connection refused"))
+
+    router = LLMRouter(client=FakeClient(chat_error=Exception("Connection refused")),
+                       client_factory=factory)
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert result["message"]["content"] == "secondary host ok"
+    assert "http://otherhost:11434" in seen_hosts

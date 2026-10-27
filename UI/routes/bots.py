@@ -19,6 +19,15 @@ def _iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+@bots_bp.route("/api/server-health", methods=["GET"])
+def server_health():
+    """Host health (disk/memory/CPU) for the bot detail panel."""
+    try:
+        return jsonify(get_server_health())
+    except Exception as e:  # noqa: BLE001 - psutil is optional
+        return jsonify({"error": f"Server health unavailable: {e}"}), 503
+
+
 @bots_bp.route("/api/bots", methods=["GET"])
 def list_bots():
     bots_repo.load()

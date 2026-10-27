@@ -715,3 +715,15 @@ button,
     padding-top: 12px;
     border-top: 1px solid var(--color-border);
 }
+
+/* Mode switch tints (classes assigned by renderModeSelector; previously
+   undefined, so the three modes looked identical). */
+.mode-switch-local_local { border-left: 3px solid var(--color-success); }
+.mode-switch-local_cloud { border-left: 3px solid var(--color-primary); }
+.mode-switch-local_remote_local { border-left: 3px solid var(--color-warning); }
+
+/* Agent personalities tab (container was unstyled). */
+.personality-list {
+    display: grid;
+    gap: 12px;
+}

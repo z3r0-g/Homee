@@ -164,3 +164,29 @@ def test_llm_pull_conflict(client, monkeypatch):
         assert second.status_code == 409
     finally:
         block.set()
+
+
+# ── Settings save must preserve fields the form does not send ────────
+
+def test_settings_save_preserves_mode_and_git_url(client):
+    resp = client.post("/api/settings/modes", json={"mode": "local_cloud"})
+    assert resp.status_code == 200
+    resp = client.post("/api/settings", json={
+        "llm": {"local_model": "qwen2.5:7b"},
+        "agents": {"git_url": "https://example.com/org/agents.git"},
+    })
+    assert resp.status_code == 200
+    # Second save without mode / agents: both must survive (the old code
+    # merged over defaults and reset them).
+    resp = client.post("/api/settings", json={
+        "llm": {"local_model": "qwen2.5:7b"},
+    })
+    assert resp.status_code == 200
+    data = client.get("/api/settings").get_json()
+    assert data["llm"]["mode"] == "local_cloud"
+    assert data["agents"]["git_url"] == "https://example.com/org/agents.git"
+
+
+def test_modes_rejects_unknown_mode(client):
+    resp = client.post("/api/settings/modes", json={"mode": "bogus"})
+    assert resp.status_code == 400

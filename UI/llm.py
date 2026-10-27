@@ -81,11 +81,14 @@ class LLMRouter:
     Each chat call can override the provider per-request.
     """
 
-    def __init__(self, client: Any = None) -> None:
+    def __init__(self, client: Any = None, client_factory: Any = None) -> None:
         self._settings = load_settings()
         # Injectable for tests; otherwise built lazily so importing this
         # module never requires the ollama package or a running server.
         self._client = client
+        # Maps a host URL to a client (ollama.Client by default). Tests
+        # inject a factory to stand in for primary + secondary hosts.
+        self._client_factory = client_factory
         self._pull_lock = threading.Lock()
         self._pull_job: Dict[str, Any] = {
             "state": "idle", "model": "", "detail": "",
@@ -102,16 +105,43 @@ class LLMRouter:
     # Ollama client
     # ════════════════════════════════════════════════════════════════
 
+    def _make_client(self, host: str) -> Any:
+        """Build a client for a host (primary or secondary Ollama)."""
+        if self._client_factory is not None:
+            return self._client_factory(host)
+        if ollama is None:
+            return None
+        # NOTE: the module-level ollama.chat() helpers ignore the host;
+        # a Client is required for a custom host to take effect.
+        return ollama.Client(host=host)
+
     @property
     def client(self) -> Any:
         """An ollama client honouring the configured OLLAMA_HOST, or None."""
         if self._client is None:
-            if ollama is None:
-                return None
-            # NOTE: the module-level ollama.chat() helpers ignore OLLAMA_HOST;
-            # a Client is required for a custom host to take effect.
-            self._client = ollama.Client(host=OLLAMA_HOST)
+            self._client = self._make_client(OLLAMA_HOST)
         return self._client
+
+    def query_secondary_local(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Query the secondary Ollama host (local_remote_local mode)."""
+        llm_cfg = self._settings["llm"]
+        host = llm_cfg.get("secondary_base_url", "")
+        model = llm_cfg.get("secondary_model") or llm_cfg["local_model"]
+        client = self._make_client(host) if host else None
+        if client is None:
+            return _failure(
+                "Secondary Ollama host is not configured. "
+                "Set one in Settings → Models (local_remote_local mode)."
+            )
+        try:
+            response = client.chat(model=model, messages=messages, tools=tools)
+            return self._normalize_ollama(response)
+        except Exception as e:  # noqa: BLE001
+            return _failure(_local_error_message(e, model))
 
     # ════════════════════════════════════════════════════════════════
     # Ollama status + model pulls (Settings → Models UI)
@@ -327,15 +357,9 @@ class LLMRouter:
         """
         self.refresh_settings()
         provider = provider or self._settings["llm"]["provider"]
-        remote_configured = bool(self._settings["llm"].get("remote_base_url"))
 
         if provider == "local":
-            result = self.query_local(messages, tools=tools, model=model)
-            if result.get("error") and remote_configured:
-                remote_result = self.query_remote(messages, model=model)
-                if not remote_result.get("error"):
-                    return remote_result
-            return result
+            return self._chat_local_with_fallback(messages, tools=tools, model=model)
 
         if provider == "remote":
             result = self.query_remote(messages, model=model)
@@ -345,7 +369,57 @@ class LLMRouter:
                     return local_result
             return result
 
+        return self._chat_local_with_fallback(messages, tools=tools, model=model)
+
+    def _chat_local_with_fallback(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Primary local chat, with the fallback the active mode allows.
+
+        Modes (Settings → LLM Mode) decide what happens when the primary
+        local model fails — previously the router always fell back to the
+        remote backend, even when the mode said local-only:
+          local_local       -> retry the secondary local model, if set
+          local_cloud       -> fall back to the cloud LLM (secondary
+                               endpoint when set, else the remote settings)
+          local_remote_local-> fall back to the secondary Ollama host
+        If every allowed fallback also fails, the primary local error is
+        returned, so the user sees the failure that actually matters.
+        """
         result = self.query_local(messages, tools=tools, model=model)
-        if result.get("error") and remote_configured:
-            return self.query_remote(messages, model=model)
+        if not result.get("error"):
+            return result
+        llm_cfg = self._settings["llm"]
+        mode = llm_cfg.get("mode", "local_local")
+
+        if mode == "local_local":
+            secondary_model = llm_cfg.get("secondary_model", "")
+            primary_model = model or llm_cfg["local_model"]
+            if secondary_model and secondary_model != primary_model:
+                alt = self.query_local(messages, tools=tools, model=secondary_model)
+                if not alt.get("error"):
+                    return alt
+            return result
+
+        if mode == "local_cloud":
+            remote_result = self.query_remote(
+                messages,
+                model=llm_cfg.get("secondary_model") or None,
+                base_url=llm_cfg.get("secondary_base_url") or None,
+                api_key=llm_cfg.get("secondary_api_key") or None,
+            )
+            if not remote_result.get("error"):
+                return remote_result
+            return result
+
+        if mode == "local_remote_local":
+            if llm_cfg.get("secondary_base_url"):
+                alt = self.query_secondary_local(messages, tools=tools)
+                if not alt.get("error"):
+                    return alt
+            return result
+
         return result
