@@ -747,3 +747,25 @@ button,
     font-size: 0.8rem;
     color: var(--color-muted);
 }
+
+/* HIG polish: buttons keep their look but behave like buttons. */
+button.mode-switch {
+    font-family: inherit;
+    text-align: left;
+}
+
+/* Visible keyboard focus on every interactive control. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Respect reduced-motion preferences across the app's transitions. */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        transition: none !important;
+    }
+}
