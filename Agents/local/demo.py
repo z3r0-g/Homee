@@ -21,7 +21,6 @@ class DemoAgent(AgentBase):
         "asks about the system. Be concise and safe. I can also provide server "
         "health reports and trending information when requested."
     )
-    model = "qwen2.5"
     tools = [get_disk_space, run_shell]
 
 

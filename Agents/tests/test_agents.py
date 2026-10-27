@@ -19,7 +19,7 @@ def test_demo_agent_subclass():
     assert issubclass(DemoAgent, AgentBase)
     agent = DemoAgent()
     assert agent.name == "Demo System Agent"
-    assert agent.model == "qwen2.5"
+    assert agent.model == "qwen2.5:7b"
     assert callable(get_disk_space)
     assert callable(run_shell)
 
@@ -115,7 +115,7 @@ def test_burundy_agent_subclass():
     assert BurundyAgent is BurundyWeatherAgent
     agent = BurundyAgent()
     assert agent.name == "Burundy Weather Agent"
-    assert agent.model == "qwen2.5"
+    assert agent.model == "qwen2.5:7b"
 
 
 def test_registry_lists_burundy_agent():

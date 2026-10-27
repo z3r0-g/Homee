@@ -279,7 +279,6 @@ class BurgundyAgent(AgentBase):
         "invent numbers. Present current conditions and the short-term forecast "
         "clearly, then sign off with: Stay classy [Local City]!"
     )
-    model = "qwen2.5"
     tools = [
         get_weather_forecast,
         get_weather,

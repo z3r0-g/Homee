@@ -114,7 +114,6 @@ class ShipwrightAgent(AgentBase):
         "fetch log traces before drawing conclusions. Never perform destructive "
         "actions without explicit admin confirmation."
     )
-    model = "qwen2.5"
     tools = [
         fetch_container_logs,
         get_system_health,

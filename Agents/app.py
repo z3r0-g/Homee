@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -15,7 +16,11 @@ import ollama
 
 __all__ = ["AgentBase", "AgentResult"]
 
-AGENT_MODEL = "qwen2.5"
+# NOTE on tags: in Ollama, a bare "qwen2.5" resolves to the :latest tag,
+# which is NOT satisfied by an installed "qwen2.5:7b" — always use a full
+# tag. OLLAMA_MODEL wins when set (same convention as the UI service),
+# so a host with a different tag installed (e.g. qwen2.5:3b) just sets it.
+AGENT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
 @dataclass
 class AgentResult:
