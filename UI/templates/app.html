@@ -34,7 +34,7 @@
                 <div class="chat-title">Agent Console</div>
                 <div class="chat-status status-pill">Ready</div>
             </div>
-            <div id="llmBanner" class="llm-banner" style="display:none;"></div>
+            <div id="llmBanner" class="llm-banner" style="display:none;" aria-live="polite"></div>
             <div id="chatArea" class="chat-host">
                 <div class="empty">Select a bot to begin</div>
             </div>
@@ -160,7 +160,7 @@
                     </div>
                     <div class="form-group" id="group-secondary-api-key">
                         <label>Secondary API Key</label>
-                        <input type="password" id="settingsSecondaryApiKey" autocomplete="off">
+                        <input type="password" id="settingsSecondaryApiKey" autocomplete="current-password">
                     </div>
                     <div class="form-group">
                         <label>Installed Ollama Models</label>
@@ -172,7 +172,7 @@
                             <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
                             <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
                         </div>
-                        <div id="pullStatus" class="llm-status"></div>
+                        <div id="pullStatus" class="llm-status" aria-live="polite"></div>
                     </div>
                     <div class="form-group" id="group-remote-base-url">
                         <label>Remote Base URL</label>

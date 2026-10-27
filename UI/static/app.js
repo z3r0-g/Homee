@@ -175,6 +175,8 @@ async function openBotChat(botId) {
     // Display name: add "Bot" suffix unless name already ends in "Bot" or "bot"
     const name = bot.name;
     const displayName = name.match(/bot$/i) ? name : `${name} Bot`;
+    const chatStatus = document.querySelector('.chat-status');
+    if (chatStatus) chatStatus.textContent = displayName;
 
     // Fetch server health
     let healthHtml = "";
@@ -338,37 +340,6 @@ async function runBotTask(botId) {
     }
 }
 
-// Load marketplace
-async function loadMarketplace() {
-    try {
-        const response = await fetch(`${API_BASE}/api/mcp/marketplace`);
-        const data = await response.json();
-        renderMarketplace(data.mcps || []);
-    } catch (e) {
-        console.warn('Marketplace load failed', e);
-    }
-}
-
-// Render marketplace MCPs
-function renderMarketplace(mcps) {
-    if (!marketplaceGrid) return;
-    marketplaceGrid.innerHTML = mcps.map(mcp => `
-        <div class="marketplace-card" data-mcp-id="${mcp.id}" data-mcp-name="${mcp.name}">
-            <h4>${mcp.name}</h4>
-            <p>${mcp.description}</p>
-        </div>
-    `).join('');
-
-    document.querySelectorAll('.marketplace-card').forEach(card => {
-        card.addEventListener('click', () => addMCPToBot(card.dataset.mcpId, card.dataset.mcpName));
-    });
-}
-
-// Add MCP to bot
-async function addMCPToBot(mcpId, mcpName) {
-    alert('MCP ' + mcpName + ' would be added to the bot');
-}
-
 // Load settings
 async function loadSettings() {
     try {
@@ -503,7 +474,14 @@ if (personalityForm) {
 if (settingsForm) {
     settingsForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        await saveSettings();
+        const saveBtn = settingsForm.querySelector('.btn-save');
+        const originalText = saveBtn ? saveBtn.textContent : '';
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+        try {
+            await saveSettings();
+        } finally {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = originalText; }
+        }
     });
 }
 
@@ -518,6 +496,12 @@ closeModalBtns.forEach(btn => {
 window.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal')) {
         closeModal(e.target);
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal.active').forEach(closeModal);
     }
 });
 
@@ -685,10 +669,10 @@ async function renderModeSelector() {
             if (key === 'local_remote_local') colorClass = 'mode-switch-local_remote_local';
 
             html += `
-                <div class="mode-switch ${isActive ? 'mode-switch-active' : 'mode-switch-inactive'} ${colorClass}" data-mode="${key}">
+                <button type="button" class="mode-switch ${isActive ? 'mode-switch-active' : 'mode-switch-inactive'} ${colorClass}" data-mode="${key}">
                     <span class="mode-switch-label">${mode.name}</span>
                     <span class="mode-switch-description">${mode.description}</span>
-                </div>
+                </button>
             `;
         });
 
@@ -792,8 +776,8 @@ async function renderMCPMarketplace() {
             html += '\n                    </div>';
             html += '\n                    <div class="mcp-description">' + (mcp.description || '') + '</div>';
             html += '\n                    <div class="mcp-actions">';
-            html += '\n                        <button class="btn-icon" data-mcp-action="import" data-mcp-id="' + mcp.id + '" title="Import">&#8671;</button>';
-            html += '\n                        <button class="btn-icon" data-mcp-action="disable" data-mcp-id="' + mcp.id + '" title="Disable">&#10006;</button>';
+            html += '\n                        <button class="btn-icon" data-mcp-action="import" data-mcp-id="' + mcp.id + '" title="Import" aria-label="Import MCP">&#8671;</button>';
+            html += '\n                        <button class="btn-icon" data-mcp-action="disable" data-mcp-id="' + mcp.id + '" title="Disable" aria-label="Disable MCP">&#10006;</button>';
             html += '\n                    </div>';
             html += '\n                </div>\n';
         });

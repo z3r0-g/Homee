@@ -32,7 +32,7 @@
     --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.12);
 
-    --font: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    --font: -apple-system, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, BlinkMacSystemFont, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -625,16 +625,18 @@ button,
     text-overflow: ellipsis;
 }
 
-.mode-switch:hover:not(.mode-switch-inactive) {
+.mode-switch:hover:not(.mode-switch-active) {
     border-color: var(--color-primary);
     color: var(--color-primary);
     background: var(--color-primary-light);
 }
 
 .mode-switch-active {
+    /* Readable in both themes: tinted background, primary text. The old
+       rule set primary text ON a primary background (invisible label). */
     border-color: var(--color-primary);
     color: var(--color-primary);
-    background: var(--color-primary);
+    background: var(--color-primary-light);
 }
 
 .mcp-badge-local {
@@ -726,4 +728,22 @@ button,
 .personality-list {
     display: grid;
     gap: 12px;
+}
+
+/* Mode switch internals: label over description (previously unstyled, so
+   both ran together on one truncated line). */
+.mode-switch-label,
+.mode-switch-description {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mode-switch-label {
+    white-space: nowrap;
+    font-weight: 600;
+}
+.mode-switch-description {
+    white-space: normal;
+    font-size: 0.8rem;
+    color: var(--color-muted);
 }
