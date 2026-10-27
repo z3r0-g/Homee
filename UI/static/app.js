@@ -134,7 +134,7 @@ function renderChatHistory(history, historyDiv) {
 
         msgDiv.innerHTML = `
             <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
-            <div class="message-content">${isUser ? escapeHtml(msg.content) : msg.content}</div>
+            <div class="message-content">${isUser ? escapeHtml(msg.content) : formatAssistantMessage(msg.content)}</div>
             <div>${timeLabel}${elapsedLabel}</div>
         `;
         historyDiv.appendChild(msgDiv);
@@ -489,7 +489,7 @@ async function sendMessageText(botId, message, input) {
             const receivedAt = new Date();
             const elapsed = receivedAt - sentAt;
             thinkingDiv.querySelector('.message-content').innerHTML = `
-                ${data.response}
+                ${formatAssistantMessage(data.response)}
                 <span class="message-time">${receivedAt.toLocaleTimeString()}</span>
                 <span class="message-time">⏱ ${formatElapsed(elapsed)}</span>
             `;
@@ -899,6 +899,87 @@ function escapeHtml(s) {
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
 }
+
+// === formatAssistantMessage:begin ===
+// LLM replies rendered as tight markdown, no library, and no HTML
+// injection from model output. Pipeline: pull fenced code blocks out
+// first (their whitespace stays verbatim), tighten the rest (trim,
+// collapse 3+ newlines to 2, strip trailing spaces), escape HTML, then
+// apply inline markdown and block structure (headings, lists, paragraphs).
+function formatAssistantMessage(text) {
+    const codeBlocks = [];
+    let body = String(text || '');
+    body = body.replace(/```[^\n]*\n([\s\S]*?)(?:```|$)/g, (m, code) => {
+        codeBlocks.push(code.replace(/\n$/, ''));
+        return `\n@@CODE${codeBlocks.length - 1}@@\n`;
+    });
+
+    body = body.split('\n').map(line => line.replace(/[ \t]+$/, '')).join('\n');
+    body = body.replace(/\n{3,}/g, '\n\n').trim();
+
+    const inline = (s) => {
+        let out = escapeHtml(s);
+        out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+        out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        out = out.replace(/\[([^\]\n]+)\]\(([^)\s(]*(?:\([^)\s]*\)[^)\s]*)*)\)/g, (m, label, url) => {
+            if (/^(https?:\/\/|mailto:|\/|#)/.test(url)) {
+                return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
+            }
+            return label;
+        });
+        return out;
+    };
+
+    const blocks = [];
+    let paragraph = [];
+    let list = null; // { tag, items }
+    const flushParagraph = () => {
+        if (paragraph.length) {
+            blocks.push(`<p>${paragraph.map(inline).join('<br>')}</p>`);
+            paragraph = [];
+        }
+    };
+    const flushList = () => {
+        if (list) {
+            const items = list.items.map(item => `<li>${inline(item)}</li>`).join('');
+            blocks.push(`<${list.tag}>${items}</${list.tag}>`);
+            list = null;
+        }
+    };
+
+    body.split('\n').forEach(line => {
+        const codeMatch = line.match(/^@@CODE(\d+)@@$/);
+        if (codeMatch) {
+            flushParagraph(); flushList();
+            blocks.push(`<pre><code>${escapeHtml(codeBlocks[Number(codeMatch[1])])}</code></pre>`);
+            return;
+        }
+        const heading = line.match(/^#{1,6}\s+(.*)$/);
+        if (heading) {
+            flushParagraph(); flushList();
+            blocks.push(`<h4>${inline(heading[1])}</h4>`);
+            return;
+        }
+        const ul = line.match(/^[-*]\s+(.*)$/);
+        const ol = line.match(/^\d+[.)]\s+(.*)$/);
+        if (ul || ol) {
+            flushParagraph();
+            const tag = ul ? 'ul' : 'ol';
+            if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+            list.items.push((ul || ol)[1]);
+            return;
+        }
+        if (line.trim() === '') {
+            flushParagraph(); flushList();
+            return;
+        }
+        paragraph.push(line);
+    });
+    flushParagraph(); flushList();
+    return blocks.join('');
+}
+// === formatAssistantMessage:end ===
 
 // Fetch /api/llm/status and reflect it in the header pill, the Settings
 // model list, and the first-run banner. Safe to call any time.
