@@ -128,6 +128,10 @@ def chat_bot(bot_id):
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
+    # Optional per-chat model override (the Fast/Smart composer switch).
+    # Only the model is overridable; the provider stays as configured.
+    model = data.get("model") or None
+
     sent_at = _iso()
     personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
     system_prompt = personality.system_prompt if personality else ""
@@ -136,7 +140,7 @@ def chat_bot(bot_id):
     messages.extend(bot.conversation_history[-20:])
     messages.append({"role": "user", "content": user_message})
 
-    result = llm_router.chat(messages)
+    result = llm_router.chat(messages, model=model)
     assistant_response = result.get("message", {}).get("content", "")
 
     received_at = _iso()

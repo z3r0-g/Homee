@@ -950,3 +950,76 @@ textarea:focus-visible {
     margin: 12px 0 4px;
     color: var(--color-muted);
 }
+
+/* ==========================================================
+   Bot working state, bot-info bar, starter prompts, model switch
+   ========================================================== */
+
+/* Sidebar status turns accent while that bot has a task running. */
+.bot-item.working .bot-status {
+    color: var(--color-primary);
+    opacity: 1;
+    font-weight: 600;
+}
+
+/* Bot-info bar: meta line + compact actions (no redundant name/status). */
+.bot-info .bot-meta {
+    color: var(--color-muted);
+    font-size: 0.85rem;
+}
+
+.bot-info .bot-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+/* Starter prompt chips, shown only on an empty chat. */
+.starter-prompts {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.starter-chip {
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-2);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.starter-chip:hover {
+    background: var(--color-surface-3);
+}
+
+/* Fast/Smart segmented switch in the composer. */
+.model-switch {
+    display: inline-flex;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    overflow: hidden;
+    align-self: center;
+}
+
+.model-switch button {
+    border: none;
+    background: transparent;
+    padding: 8px 14px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--color-muted);
+}
+
+.model-switch button.active {
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+}
+
+.model-switch button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}

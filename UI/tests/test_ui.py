@@ -332,3 +332,53 @@ def test_settings_default_model_is_ram_aware(client):
     expected = model_catalog.default_model(model_catalog.host_total_ram_gb())
     data = client.get("/api/settings").get_json()
     assert data["llm"]["local_model"] == expected
+
+
+def test_update_bot_via_put(client):
+    resp = client.post(
+        "/api/bots",
+        json={"name": "Edit Me", "task_prompt": "old", "enabled": True},
+    )
+    bot_id = resp.get_json()["bot"]["id"]
+    resp = client.put(f"/api/bots/{bot_id}", json={
+        "name": "Edited Bot",
+        "personality_id": "general",
+        "task_prompt": "summarize",
+        "schedule_type": "interval",
+        "interval_seconds": 600,
+        "cron_expression": "",
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()["bot"]
+    assert data["name"] == "Edited Bot"
+    assert data["personality_id"] == "general"
+    assert data["config"]["task_prompt"] == "summarize"
+    assert data["config"]["schedule_type"] == "interval"
+    assert data["config"]["interval_seconds"] == 600
+    resp = client.put("/api/bots/nope", json={"name": "x"})
+    assert resp.status_code == 404
+
+
+def test_chat_passes_model_override(client, monkeypatch):
+    import UI.routes.bots as bots_routes
+
+    seen = {}
+
+    class _StubRouter:
+        def chat(self, messages, model=None):
+            seen["model"] = model
+            return {"message": {"content": "hello"}}
+
+    monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
+    resp = client.post("/api/bots", json={"name": "Chat Bot", "enabled": True})
+    bot_id = resp.get_json()["bot"]["id"]
+    resp = client.post(
+        f"/api/bots/{bot_id}/chat",
+        json={"message": "hi", "model": "qwen2.5:3b"},
+    )
+    assert resp.status_code == 200
+    assert seen["model"] == "qwen2.5:3b"
+    # No model field -> router default (Fast), not an override.
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hi"})
+    assert resp.status_code == 200
+    assert seen["model"] is None

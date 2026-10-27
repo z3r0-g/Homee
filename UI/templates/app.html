@@ -85,6 +85,51 @@
         </div>
     </div>
 
+    <!-- EDIT BOT MODAL -->
+    <div id="editBotModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Bot</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <form id="editBotForm">
+                <input type="hidden" id="editBotId">
+                <div class="form-group">
+                    <label>Bot Name</label>
+                    <input type="text" id="editBotName" required>
+                </div>
+                <div class="form-group">
+                    <label>Agent Personality</label>
+                    <select id="editBotPersonality">
+                        <option value="">(none)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Task Prompt</label>
+                    <textarea id="editBotTaskPrompt" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Schedule</label>
+                    <select id="editBotSchedule">
+                        <option value="none">None</option>
+                        <option value="interval">Every N Seconds</option>
+                        <option value="cron">Cron Expression</option>
+                    </select>
+                </div>
+                <div class="form-group" id="editScheduleOptions" style="display:none;">
+                    <label>Interval</label>
+                    <input type="number" id="editBotInterval" value="3600" min="60">
+                </div>
+                <div class="form-group" id="editCronOptions" style="display:none;">
+                    <label>Cron Expression</label>
+                    <input type="text" id="editBotCron" placeholder="0 * * * *">
+                </div>
+                <p id="editBotStatus" class="llm-status" role="status"></p>
+                <button type="submit" class="btn-save">Save Changes</button>
+            </form>
+        </div>
+    </div>
+
     <!-- PERSONALITY MODAL -->
     <div id="personalityModal" class="modal">
         <div class="modal-content">

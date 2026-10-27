@@ -2,6 +2,10 @@
 
 const API_BASE = '';
 let globalBots = [];
+let currentBotId = null;
+let currentSettings = null;
+let chatModelChoice = 'fast'; // 'fast' (primary) | 'smart' (secondary)
+const botBusy = {}; // botId -> in-flight op count
 
 function formatElapsed(ms) {
     const totalSeconds = Math.max(0, Math.round(ms / 1000));
@@ -63,15 +67,159 @@ function renderBotList(bots) {
         return;
     }
     botList.innerHTML = bots.map(bot => `
-        <div class="bot-item" data-testid="bot-item" data-bot-id="${bot.id}" data-bot-name="${bot.name}">
+        <div class="bot-item${botBusy[bot.id] ? ' working' : ''}" data-testid="bot-item" data-bot-id="${bot.id}" data-bot-name="${bot.name}">
             <span style="font-weight: 500;">${bot.name}</span>
-            <span class="bot-status">${bot.status}</span>
+            <span class="bot-status">${botBusy[bot.id] ? 'working' : bot.status}</span>
         </div>
     `).join('');
 
     document.querySelectorAll('.bot-item').forEach(item => {
         item.addEventListener('click', () => openBotChat(item.dataset.botId));
     });
+}
+
+
+// Per-bot working state: a bot with an in-flight chat or task shows
+// "working" in the sidebar until its op settles, even while the user
+// chats with another bot. Server status is never rewritten: this is
+// purely the session's view of what it started, so a stale "working"
+// can never survive a reload. renderBotList re-applies it on refresh.
+function setBotBusy(botId, busy) {
+    botBusy[botId] = Math.max(0, (botBusy[botId] || 0) + (busy ? 1 : -1));
+    const item = document.querySelector(`.bot-item[data-bot-id="${botId}"]`);
+    if (!item) return;
+    const statusEl = item.querySelector('.bot-status');
+    const bot = globalBots.find(b => b.id === botId);
+    item.classList.toggle('working', !!botBusy[botId]);
+    if (statusEl) statusEl.textContent = botBusy[botId] ? 'working' : (bot ? bot.status : 'idle');
+}
+
+// Personality label for the bot-info bar: prefer the saved-personality
+// name from the new-bot dropdown; agent-direct ids (short names) show
+// in full, long uuid-like ids fall back to the old 8-char prefix.
+function resolvePersonalityName(personalityId) {
+    if (!personalityId) return 'none';
+    const select = document.getElementById('newBotPersonality');
+    if (select) {
+        const opt = [...select.options].find(o => o.value === personalityId);
+        if (opt && opt.text !== '(none)') return opt.text;
+    }
+    return personalityId.length > 20 ? personalityId.substring(0, 8) : personalityId;
+}
+
+function scheduleLabel(cfg) {
+    if (!cfg) return 'No schedule';
+    if (cfg.schedule_type === 'interval') return `Every ${cfg.interval_seconds || 3600}s`;
+    if (cfg.schedule_type === 'cron') return `Cron ${cfg.cron_expression || ''}`.trim();
+    return 'No schedule';
+}
+
+// Shared by openBotChat and background-task completion: re-rendering a
+// bot's history from the server is what makes a finished background
+// reply appear without another click.
+function renderChatHistory(history, historyDiv) {
+    historyDiv.innerHTML = '';
+    history.forEach((msg, idx) => {
+        const msgDiv = document.createElement('div');
+        const isUser = msg.role === 'user';
+        msgDiv.className = `message ${isUser ? 'message-user' : 'bot'}`;
+
+        const timeLabel = msg.timestamp ? ` <span class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>` : '';
+        let elapsedLabel = '';
+        if (!isUser && idx > 0 && history[idx - 1].role === 'user' && history[idx - 1].timestamp && msg.timestamp) {
+            const ms = new Date(msg.timestamp) - new Date(history[idx - 1].timestamp);
+            elapsedLabel = ` <span class="message-time">⏱ ${formatElapsed(ms)}</span>`;
+        }
+
+        msgDiv.innerHTML = `
+            <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
+            <div class="message-content">${isUser ? escapeHtml(msg.content) : msg.content}</div>
+            <div>${timeLabel}${elapsedLabel}</div>
+        `;
+        historyDiv.appendChild(msgDiv);
+    });
+}
+
+function appendWorkingRow(historyDiv) {
+    const row = document.createElement('div');
+    row.className = 'message bot';
+    row.innerHTML = `
+        <div class="message-label">Bot</div>
+        <div class="message-content">Working…</div>
+    `;
+    historyDiv.appendChild(row);
+    historyDiv.scrollTop = historyDiv.scrollHeight;
+}
+
+// Empty-chat suggestions: at most two chips, no config UI. The bot's
+// task prompt (if it has one) plus a capabilities question.
+function appendStarterPrompts(bot) {
+    const chips = [];
+    const taskPrompt = (bot.config && bot.config.task_prompt) || '';
+    if (taskPrompt) chips.push(taskPrompt);
+    chips.push('What can you do?');
+    const wrap = document.createElement('div');
+    wrap.className = 'starter-prompts';
+    wrap.innerHTML = chips.map(text => `<button type="button" class="starter-chip" title="${escapeHtml(text)}">${escapeHtml(text.length > 48 ? text.substring(0, 48) + '…' : text)}</button>`).join('');
+    wrap.querySelectorAll('.starter-chip').forEach((btn, i) => {
+        btn.addEventListener('click', () => sendMessageText(bot.id, chips[i]));
+    });
+    chatArea.appendChild(wrap);
+}
+
+async function refreshChatHistory(botId) {
+    if (currentBotId !== botId) return;
+    const historyDiv = document.getElementById('chatHistory');
+    if (!historyDiv) return;
+    try {
+        const response = await fetch(`${API_BASE}/api/bots/${botId}`);
+        if (!response.ok) return;
+        const bot = await response.json();
+        renderChatHistory(bot.conversation_history || [], historyDiv);
+        if (botBusy[botId]) appendWorkingRow(historyDiv);
+        const gbot = globalBots.find(b => b.id === botId);
+        if (gbot) gbot.conversation_history = bot.conversation_history;
+    } catch (e) {
+        console.warn('Failed to refresh chat history', e);
+    }
+}
+
+function reenableComposer() {
+    const composer = document.querySelector('.chat-composer');
+    if (!composer) return;
+    const send = composer.querySelector('.btn-save');
+    if (send) send.disabled = false;
+    const runBtn = document.getElementById('runTaskBtn');
+    if (runBtn) runBtn.disabled = false;
+    const input = document.getElementById('userMessage');
+    if (input) input.disabled = false;
+}
+
+// Fast sends no model (server default = primary). Smart sends the
+// configured secondary model name; without one the Smart button is
+// disabled at render, so this never fires unconfigured.
+function chatModelForSend() {
+    const llm = (currentSettings && currentSettings.llm) || {};
+    if (chatModelChoice === 'smart' && llm.secondary_model) return llm.secondary_model;
+    return null;
+}
+
+// Shared settle path for chat sends: clear the timer + busy flag,
+// re-enable the live composer, refresh the history if the user came
+// back to this bot mid-run (their thinking row is detached by then),
+// then refresh the sidebar so "working" clears.
+async function settleSend(botId, thinkingDiv, input, timer) {
+    clearInterval(timer);
+    setBotBusy(botId, false);
+    if (input && input.isConnected) {
+        input.disabled = false;
+        input.focus();
+    }
+    if (currentBotId === botId) {
+        reenableComposer();
+        if (!thinkingDiv.isConnected) await refreshChatHistory(botId);
+    }
+    await loadBots();
 }
 
 // Load personalities for the new-bot dropdown
@@ -88,6 +236,8 @@ async function loadPersonalitiesForNewBot() {
                 (data.personalities || []).map(p =>
                     `<option value="${p.id}">${p.name}</option>`
                 ).join('');
+            const editSelect = document.getElementById('editBotPersonality');
+            if (editSelect) editSelect.innerHTML = select.innerHTML;
         }
     } catch (e) {
         console.warn('Failed to load available personalities', e);
@@ -96,6 +246,8 @@ async function loadPersonalitiesForNewBot() {
             select.innerHTML = '<option value="">(none)</option>' +
                 '<option value="demo">Demo Mode</option>' +
                 '<option value="general">General</option>';
+            const editSelect = document.getElementById('editBotPersonality');
+            if (editSelect) editSelect.innerHTML = select.innerHTML;
         }
     }
 }
@@ -136,6 +288,7 @@ async function deleteBot(botId) {
             if (document.getElementById('chatArea').children[0]?.className === 'bot-info' && 
                 document.getElementById('chatArea').children[0].getAttribute('data-bot-id') === botId) {
                 chatArea.innerHTML = '';
+                currentBotId = null;
             }
         } else {
             console.warn('Failed to delete bot', response);
@@ -172,6 +325,7 @@ async function enableBot(botId) {
 async function openBotChat(botId) {
     const bot = globalBots.find(b => b.id === botId);
     if (!bot) return;
+    currentBotId = botId;
 
     // Display name: add "Bot" suffix unless name already ends in "Bot" or "bot"
     const name = bot.name;
@@ -209,7 +363,12 @@ async function openBotChat(botId) {
 
     const infoDiv = document.createElement('div');
     infoDiv.className = 'bot-info';
-    infoDiv.innerHTML = `<strong>${displayName}</strong> ${bot.personality_id ? '(Personality: ' + bot.personality_id.substring(0,8) + ')' : ''} | Status: <span id="botStatus">${bot.status}</span>${healthHtml} ${bot.config.enabled ? `<button class="btn-disable" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>` : `<button class="btn-delete" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button class="btn-enable" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`}`;
+    infoDiv.dataset.botId = bot.id;
+    const cfg = bot.config || {};
+    const barActions = cfg.enabled
+        ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>`
+        : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`;
+    infoDiv.innerHTML = `<span class="bot-meta">Personality: ${escapeHtml(resolvePersonalityName(bot.personality_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
@@ -217,40 +376,42 @@ async function openBotChat(botId) {
     historyDiv.className = 'chat-history';
     chatArea.appendChild(historyDiv);
 
-    const history = bot.conversation_history || [];
-    history.forEach((msg, idx) => {
-        const msgDiv = document.createElement('div');
-        const isUser = msg.role === 'user';
-        msgDiv.className = `message ${isUser ? 'message-user' : 'bot'}`;
-        
-        const timeLabel = msg.timestamp ? ` <span class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>` : '';
-        let elapsedLabel = '';
-        if (!isUser && idx > 0 && history[idx - 1].role === 'user' && history[idx - 1].timestamp && msg.timestamp) {
-            const ms = new Date(msg.timestamp) - new Date(history[idx - 1].timestamp);
-            elapsedLabel = ` <span class="message-time">⏱ ${formatElapsed(ms)}</span>`;
-        }
-        
-        msgDiv.innerHTML = `
-            <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
-            <div class="message-content">${isUser ? escapeHtml(msg.content) : msg.content}</div>
-            <div>${timeLabel}${elapsedLabel}</div>
-        `;
-        historyDiv.appendChild(msgDiv);
-    });
+    renderChatHistory(bot.conversation_history || [], historyDiv);
+    if (botBusy[botId]) appendWorkingRow(historyDiv);
+    if (!(bot.conversation_history || []).length) appendStarterPrompts(bot);
 
     const formDiv = document.createElement('div');
     formDiv.className = 'chat-composer';
+    const llm = (currentSettings && currentSettings.llm) || {};
+    const smartAvailable = !!llm.secondary_model;
+    const switchHtml = llm.local_model ? `<div class="model-switch" role="group" aria-label="Model">
+        <button type="button" data-model-choice="fast" class="${chatModelChoice === 'fast' ? 'active' : ''}">Fast</button>
+        <button type="button" data-model-choice="smart" class="${chatModelChoice === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled title="Set a secondary model in Settings to enable Smart"'}>Smart</button>
+    </div>` : '';
     formDiv.innerHTML = `
         <input type="text" id="userMessage" class="chat-input" placeholder="Type a message..." />
+        ${switchHtml}
         <button class="btn-save">Send</button>
         <button id="runTaskBtn" class="btn-run-task">Run Task</button>
     `;
     chatArea.appendChild(formDiv);
 
     const input = document.getElementById('userMessage');
-    input.focus();
+    const composerBusy = !!botBusy[botId];
+    input.disabled = composerBusy;
+    if (composerBusy) {
+        formDiv.querySelector('.btn-save').disabled = true;
+        document.getElementById('runTaskBtn').disabled = true;
+    } else {
+        input.focus();
+    }
 
-    formDiv.querySelector('button').addEventListener('click', () => sendMessage(input, botId));
+    formDiv.querySelectorAll('[data-model-choice]').forEach(btn => btn.addEventListener('click', () => {
+        chatModelChoice = btn.dataset.modelChoice;
+        formDiv.querySelectorAll('[data-model-choice]').forEach(b => b.classList.toggle('active', b === btn));
+    }));
+
+    formDiv.querySelector('.btn-save').addEventListener('click', () => sendMessage(input, botId));
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(input, botId); });
 
     document.getElementById('runTaskBtn').addEventListener('click', () => runBotTask(botId));
@@ -260,13 +421,23 @@ async function openBotChat(botId) {
 async function sendMessage(input, botId) {
     const message = input.value.trim();
     if (!message) return;
-
     input.value = '';
-    input.disabled = true;
+    await sendMessageText(botId, message, input);
+}
 
+// Core send path shared by the composer and starter chips: one in-flight
+// op per bot. The fetch is never aborted on bot switch — it keeps
+// running, the sidebar shows "working", and completion lands wherever
+// the user is (in place, or via a history refresh on return).
+async function sendMessageText(botId, message, input) {
+    if (botBusy[botId]) return;
     const historyDiv = document.getElementById('chatHistory');
+    if (!historyDiv) return;
+    if (input) input.disabled = true;
+    document.querySelector('.starter-prompts')?.remove();
+
     const sentAt = new Date();
-    
+
     const userDiv = document.createElement('div');
     userDiv.className = 'message message-user';
     userDiv.innerHTML = `
@@ -290,41 +461,44 @@ async function sendMessage(input, botId) {
         if (span) span.textContent = `${formatElapsed(Date.now() - sentAt.getTime())} …`;
     }, 1000);
 
+    setBotBusy(botId, true);
     try {
+        const body = { message };
+        const model = chatModelForSend();
+        if (model) body.model = model;
         const response = await fetch(`${API_BASE}/api/bots/${botId}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message })
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();
-        clearInterval(timer);
-        input.disabled = false;
-        input.focus();
-
         if (data.error) {
-            thinkingDiv.querySelector('.message-content').textContent = data.error;
-            return;
+            if (thinkingDiv.isConnected) thinkingDiv.querySelector('.message-content').textContent = data.error;
+        } else if (thinkingDiv.isConnected) {
+            const receivedAt = new Date();
+            const elapsed = receivedAt - sentAt;
+            thinkingDiv.querySelector('.message-content').innerHTML = `
+                ${data.response}
+                <span class="message-time">${receivedAt.toLocaleTimeString()}</span>
+                <span class="message-time">⏱ ${formatElapsed(elapsed)}</span>
+            `;
+            historyDiv.scrollTop = historyDiv.scrollHeight;
         }
-
-        const receivedAt = new Date();
-        const elapsed = receivedAt - sentAt;
-        thinkingDiv.querySelector('.message-content').innerHTML = `
-            ${data.response}
-            <span class="message-time">${receivedAt.toLocaleTimeString()}</span>
-            <span class="message-time">⏱ ${formatElapsed(elapsed)}</span>
-        `;
-        historyDiv.scrollTop = historyDiv.scrollHeight;
-        await loadBots();
+        await settleSend(botId, thinkingDiv, input, timer);
     } catch (err) {
-        clearInterval(timer);
-        input.disabled = false;
-        thinkingDiv.querySelector('.message-content').textContent = `Error: ${err.message}`;
+        if (thinkingDiv.isConnected) thinkingDiv.querySelector('.message-content').textContent = `Error: ${err.message}`;
+        await settleSend(botId, thinkingDiv, input, timer);
     }
 }
 
-// Run bot's scheduled task
+// Run bot's scheduled task. Like chat, it keeps running if the user
+// switches bots: no alert yanked into another bot's view, no forced
+// re-open — the sidebar clears "working" and the history refreshes
+// only if the user is still looking at this bot.
 async function runBotTask(botId) {
+    if (botBusy[botId]) return;
+    setBotBusy(botId, true);
     try {
         const response = await fetch(`${API_BASE}/api/bots/${botId}/run`, {
             method: 'POST',
@@ -332,16 +506,25 @@ async function runBotTask(botId) {
             body: JSON.stringify({})
         });
         const data = await response.json();
+        setBotBusy(botId, false);
         if (data.error) {
-            alert(data.error);
-            return;
+            if (currentBotId === botId) alert(data.error);
+            else console.warn('Background task failed for bot', botId, data.error);
+        } else if (currentBotId === botId) {
+            reenableComposer();
+            alert('Task completed: ' + (data.response || '').substring(0, 200));
+            await refreshChatHistory(botId);
         }
-        alert('Task completed: ' + (data.response || '').substring(0, 200));
         await loadBots();
-        const bot = globalBots.find(b => b.id === botId);
-        if (bot) openBotChat(botId);
     } catch (e) {
-        alert('Failed to run task');
+        setBotBusy(botId, false);
+        if (currentBotId === botId) {
+            reenableComposer();
+            alert('Failed to run task');
+        } else {
+            console.warn('Background task failed for bot', botId, e);
+        }
+        await loadBots();
     }
 }
 
@@ -350,6 +533,7 @@ async function loadSettings() {
     try {
         const response = await fetch(`${API_BASE}/api/settings`);
         const settings = await response.json();
+        currentSettings = settings;
         document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5:7b';
         document.getElementById('settingsSecondaryModel').value = settings.llm?.secondary_model || '';
         document.getElementById('settingsSecondaryBaseUrl').value = settings.llm?.secondary_base_url || '';
@@ -408,6 +592,7 @@ async function saveSettings() {
     if (data.success) {
         // Inline confirmation, then close so the user actually sees it.
         if (statusEl) statusEl.textContent = 'Settings saved ✓';
+        await loadSettings();
         setTimeout(() => closeModal(settingsModal), 900);
     } else {
         if (statusEl) statusEl.textContent = 'Failed to save settings.';
@@ -458,6 +643,73 @@ if (newBotForm) {
         await loadPersonalitiesForNewBot();
         closeModal(newBotModal);
     });
+}
+
+async function openEditBot(botId) {
+    try {
+        const response = await fetch(`${API_BASE}/api/bots/${botId}`);
+        if (!response.ok) return;
+        const bot = await response.json();
+        await loadPersonalitiesForNewBot();
+        document.getElementById('editBotId').value = bot.id;
+        document.getElementById('editBotName').value = bot.name || '';
+        document.getElementById('editBotPersonality').value = bot.personality_id || '';
+        document.getElementById('editBotTaskPrompt').value = (bot.config && bot.config.task_prompt) || '';
+        const schedule = (bot.config && bot.config.schedule_type) || 'none';
+        document.getElementById('editBotSchedule').value = schedule;
+        document.getElementById('editBotInterval').value = (bot.config && bot.config.interval_seconds) || 3600;
+        document.getElementById('editBotCron').value = (bot.config && bot.config.cron_expression) || '';
+        toggleEditScheduleGroups(schedule);
+        document.getElementById('editBotStatus').textContent = '';
+        document.getElementById('editBotModal').classList.add('active');
+    } catch (e) {
+        console.warn('Failed to open bot editor', e);
+    }
+}
+
+function toggleEditScheduleGroups(schedule) {
+    document.getElementById('editScheduleOptions').style.display = schedule === 'interval' ? 'block' : 'none';
+    document.getElementById('editCronOptions').style.display = schedule === 'cron' ? 'block' : 'none';
+}
+
+const editBotForm = document.getElementById('editBotForm');
+if (editBotForm) {
+    editBotForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const botId = document.getElementById('editBotId').value;
+        const scheduleType = document.getElementById('editBotSchedule').value;
+        const payload = {
+            name: document.getElementById('editBotName').value,
+            personality_id: document.getElementById('editBotPersonality').value || '',
+            task_prompt: document.getElementById('editBotTaskPrompt').value,
+            schedule_type: scheduleType,
+            interval_seconds: scheduleType === 'interval' ? parseInt(document.getElementById('editBotInterval').value) || 3600 : 0,
+            cron_expression: scheduleType === 'cron' ? document.getElementById('editBotCron').value : '',
+        };
+        const statusEl = document.getElementById('editBotStatus');
+        try {
+            const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok) {
+                const modal = document.getElementById('editBotModal');
+                if (modal) closeModal(modal);
+                await loadBots();
+                openBotChat(botId);
+            } else {
+                if (statusEl) statusEl.textContent = 'Failed to save bot.';
+            }
+        } catch (err) {
+            if (statusEl) statusEl.textContent = 'Failed to save bot.';
+        }
+    });
+}
+
+const editBotScheduleEl = document.getElementById('editBotSchedule');
+if (editBotScheduleEl) {
+    editBotScheduleEl.addEventListener('change', (e) => toggleEditScheduleGroups(e.target.value));
 }
 
 if (personalityForm) {
@@ -527,6 +779,7 @@ if (chatArea) chatArea.addEventListener('click', (e) => {
     if (action === 'disable') disableBot(id);
     else if (action === 'delete') deleteBot(id);
     else if (action === 'enable') enableBot(id);
+    else if (action === 'edit') openEditBot(id);
 });
 
 // Status pill opens Settings (it reports what Settings configures).
