@@ -49,6 +49,22 @@ def create_ui_app() -> Flask:
     app.register_blueprint(settings_bp)
     app.register_blueprint(agents_bp)
 
+    # Cache-bust static assets: the browser otherwise holds app.js/app.css
+    # for Flask's 12h static max-age across pulls, so a pulled fix can
+    # look like a regression (stale JS, stale CSS). The version is the
+    # newest mtime of the two assets, so any pull that touches them
+    # changes every URL. Computed per render so a pull without a
+    # restart still serves fresh assets.
+    @app.context_processor
+    def _static_version():
+        version = 0
+        for name in ("app.css", "app.js"):
+            try:
+                version = max(version, int(os.path.getmtime(os.path.join(app.static_folder, name))))
+            except OSError:
+                pass
+        return {"static_version": version}
+
     # Health check
     @app.get("/api/health")
     def health():
