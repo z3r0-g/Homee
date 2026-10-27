@@ -18,7 +18,7 @@ def test_agent_result_defaults():
 def test_demo_agent_subclass():
     assert issubclass(DemoAgent, AgentBase)
     agent = DemoAgent()
-    assert agent.name == "Demo System Agent"
+    assert agent.name == "Demo (System Agent)"
     assert agent.model == "qwen2.5:7b"
     assert callable(get_disk_space)
     assert callable(run_shell)
@@ -27,7 +27,7 @@ def test_demo_agent_subclass():
 def test_registry_lists_local_agent():
     agents = agent_registry.list_agents()
     names = {a["name"] for a in agents}
-    assert "Demo System Agent" in names
+    assert "Demo (System Agent)" in names
 
 
 def test_build_tool_specs_include_knowledge_base():
@@ -56,13 +56,13 @@ def test_run_shell_echo():
 
 
 # ════════════════════════════════════════════════════════════════
-# Burundy Weather Agent
+# Burgundy Weather Agent
 # ════════════════════════════════════════════════════════════════
 
 import Agents.local.burgundy as burgundy  # noqa: E402
 from Agents.local.burgundy import (  # noqa: E402
-    BurundyAgent,
-    BurundyWeatherAgent,
+    BurgundyAgent,
+    BurgundyWeatherAgent,
     get_weather_by_zip,
     get_weather_forecast,
 )
@@ -110,29 +110,29 @@ _WTTR_SAMPLE = {
 }
 
 
-def test_burundy_agent_subclass():
-    assert issubclass(BurundyAgent, AgentBase)
-    assert BurundyAgent is BurundyWeatherAgent
-    agent = BurundyAgent()
-    assert agent.name == "Burundy Weather Agent"
+def test_burgundy_agent_subclass():
+    assert issubclass(BurgundyAgent, AgentBase)
+    assert BurgundyAgent is BurgundyWeatherAgent
+    agent = BurgundyAgent()
+    assert agent.name == "Burgundy (Weather Agent)"
     assert agent.model == "qwen2.5:7b"
 
 
-def test_registry_lists_burundy_agent():
+def test_registry_lists_burgundy_agent():
     agents = agent_registry.list_agents()
     names = {a["name"] for a in agents}
-    assert "Burundy Weather Agent" in names
+    assert "Burgundy (Weather Agent)" in names
 
 
-def test_burundy_has_weather_tools():
-    agent = BurundyAgent()
+def test_burgundy_has_weather_tools():
+    agent = BurgundyAgent()
     names = {spec["function"]["name"] for spec in agent._build_tool_specs()}
     assert {"get_weather_forecast", "knowledge_base"} <= names
 
 
-def test_burundy_system_prompt_style():
-    agent = BurundyAgent()
-    assert "Stay classy, San Diego" in agent.system_prompt
+def test_burgundy_system_prompt_style():
+    agent = BurgundyAgent()
+    assert "Stay classy" in agent.system_prompt
 
 
 def test_get_weather_forecast_by_zip(monkeypatch):

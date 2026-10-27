@@ -86,7 +86,7 @@ def available_personalities():
     """Combined list of saved personalities plus discovered agents.
 
     Lets the New-Bot form offer *every* selectable personality in one place,
-    including locally-discovered agents like the Burundy Weather Agent that are
+    including locally-discovered agents like the Burgundy Weather Agent that are
     not stored in the personalities repository.
     """
     from ..models import personalities_repo
