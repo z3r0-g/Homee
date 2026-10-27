@@ -370,7 +370,7 @@ async function openBotChat(botId) {
     const barActions = cfg.enabled
         ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>`
         : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`;
-    infoDiv.innerHTML = `<span class="bot-meta">Personality: ${escapeHtml(resolvePersonalityName(bot.personality_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
+    infoDiv.innerHTML = `<span class="bot-meta">Skill: ${escapeHtml(resolvePersonalityName(bot.personality_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
@@ -1609,7 +1609,7 @@ if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
     }
 });
 
-// ── Agent Personalities: local agents on by default, disableable ──────
+// ── Skills: local skills on by default, disableable ──────
 // The old render used agent.id / agent.status, which /api/agents/active
 // never returned — hence the literal "undefined" in every card — and its
 // inline onclick handlers were unclosed calls, so the buttons did nothing.
@@ -1625,7 +1625,7 @@ async function renderAgentPersonalities() {
         const agentVars = ((await envRes.json()).vars) || {};
         let html = '';
         if (agents.length > 0) {
-            html += '<h4>Active Agents</h4><div class="agent-item">';
+            html += '<h4>Active Skills</h4><div class="agent-item">';
             agents.forEach(agent => {
                 html += `
                     <div class="agent-card" data-agent-id="${escapeHtml(agent.id)}">
@@ -1636,17 +1636,17 @@ async function renderAgentPersonalities() {
                         </div>
                         <div class="agent-description">${escapeHtml(agent.description || '')}</div>
                         <div class="agent-controls">
-                            <button class="btn-icon" data-agent-action="toggle" data-agent-id="${escapeHtml(agent.id)}" title="${agent.active ? 'Disable' : 'Enable'}" aria-label="${agent.active ? 'Disable agent' : 'Enable agent'}">${agent.active ? '&#10006;' : '&#10003;'}</button>
-                            <button class="btn-icon" data-agent-action="import-git" data-agent-id="${escapeHtml(agent.id)}" title="Import from Git" aria-label="Import agent from Git">&#8635;</button>
+                            <button class="btn-icon" data-agent-action="toggle" data-agent-id="${escapeHtml(agent.id)}" title="${agent.active ? 'Disable' : 'Enable'}" aria-label="${agent.active ? 'Disable skill' : 'Enable skill'}">${agent.active ? '&#10006;' : '&#10003;'}</button>
+                            <button class="btn-icon" data-agent-action="import-git" data-agent-id="${escapeHtml(agent.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
                         </div>
                     </div>`;
             });
             html += '</div>';
         } else {
-            html += '<p style="color: var(--color-muted);">No agents discovered.</p>';
+            html += '<p style="color: var(--color-muted);">No skills discovered.</p>';
         }
         if (Object.keys(agentVars).length > 0) {
-            html += '<h4>Personalities from Environment</h4><div class="personality-item">';
+            html += '<h4>Skills from Environment</h4><div class="personality-item">';
             Object.entries(agentVars).forEach(([key, value]) => {
                 const name = key.replace('AGENT_', '').replace(/_/g, ' ');
                 html += `
@@ -1671,7 +1671,7 @@ async function renderAgentPersonalities() {
                 const result = await response.json();
                 const syncStatus = document.getElementById('agentsSyncStatus');
                 if (result.success) {
-                    if (syncStatus) syncStatus.textContent = 'Agent imported from Git.';
+                    if (syncStatus) syncStatus.textContent = 'Skill imported from Git.';
                     await renderAgentPersonalities();
                 } else if (syncStatus) {
                     syncStatus.textContent = 'Failed to import from Git: ' + (result.error || '');
@@ -1709,14 +1709,14 @@ if (agentsSyncBtn) agentsSyncBtn.addEventListener('click', async () => {
         });
         const response = await fetch(`${API_BASE}/api/agents/refresh`, { method: 'POST' });
         const data = await response.json();
-        if (statusEl) statusEl.textContent = `Synced — ${(data.agents || []).length} agent(s) discovered.`;
+        if (statusEl) statusEl.textContent = `Synced — ${(data.agents || []).length} skill(s) discovered.`;
         await renderAgentPersonalities();
     } catch (e) {
         if (statusEl) statusEl.textContent = `Sync failed: ${e.message}`;
     }
 });
 
-// Initialize MCP and Personalities
+// Initialize MCP and Skills
 async function initMCPAndPersonalities() {
     await renderLocalMcps();
     await renderRemoteMcps();

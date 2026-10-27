@@ -11,8 +11,8 @@ Homee is a simple, self-hosted home for local AI — a simpler alternative to Op
 
 - **Bot Management**: Create, manage, and chat with AI agent bots
 - **MCP Integrations**: Model Context Protocol integrations (GitHub, Google Drive, Microsoft OneDrive)
-- **Agent Plugins**: Loadable agents from local directories or remote Git repositories
-- **Personalities**: Configure agent personalities with skills, abilities, and system prompts
+- **Skills**: Loadable skills from local directories or remote Git repositories
+- **Skills**: Configure skills with abilities and system prompts
 
 ## Features
 
@@ -30,9 +30,9 @@ Five features, done the simple way:
     - 8GB+ RAM (must support running at least CPU-only LLM models)
 - Ollama (local LLM)
 - Python 3.13 with virtual environment (`venv`)
-- Git (for remote agent plugins)
+- Git (for remote skill plugins)
 - Node.js and npm (for frontend assets)
-- Git LFS (if using large files in remote agent plugins)
+- Git LFS (if using large files in remote skill plugins)
 
 ## Architecture
 

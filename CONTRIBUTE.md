@@ -1,18 +1,18 @@
-# Contributing agents to Homee
+# Contributing skills to Homee
 
-Homee discovers agents from two places, and both work the same way: put
+Homee discovers skills from two places, and both work the same way: put
 files in a directory, and Homee scans them.
 
 - **Local:** `Agents/local/*.py` in this repo (scanned on startup).
 - **Remote:** any public git repo, synced from the UI — open **Settings →
-  Agent Personalities**, paste the repo URL, and press **Sync Agents**.
+  Skills**, paste the repo URL, and press **Sync Skills**.
   Homee clones it to `Agents/remote/<repo-name>` (depth 1) and pulls
   `--ff-only` on every re-sync.
 
-A repo can ship **agent Python scripts**, **personality JSON files**, or
+A repo can ship **skill Python scripts**, **skill JSON files**, or
 both. Files whose names start with `_` are skipped.
 
-> **Trust note:** agent `.py` files are imported and executed in-process.
+> **Trust note:** skill `.py` files are imported and executed in-process.
 > Only sync repos you trust, the same way you would only install software
 > you trust.
 
@@ -21,7 +21,7 @@ both. Files whose names start with `_` are skipped.
 ```
 my-agents/
 ├── weather.py              # an AgentBase subclass (code agent)
-├── librarian.json          # a personality (data only)
+├── librarian.json          # a skill (data only)
 └── README.md               # what your agents do (optional, recommended)
 ```
 
@@ -64,11 +64,11 @@ Keep agent modules dependency-light: the standard library, `ollama`, and
 `Agents.app` are safe. Anything else must be installed on the host or the
 module is skipped (the skip is logged, not fatal).
 
-## Personality JSON files
+## Skill JSON files
 
-A personality is data, not code: a name, a system prompt, and optional
-skills/abilities. It appears in the **New Bot** personality picker and in
-**Settings → Agent Personalities** after a sync.
+A skill is data, not code: a name, a system prompt, and optional
+skills/abilities. It appears in the **New Bot** skill picker and in
+**Settings → Skills** after a sync.
 
 ```json
 {
@@ -86,22 +86,22 @@ Rules:
 - `name` is required. `id` defaults to the file stem (`librarian.json` →
   `librarian`) when omitted.
 - A file may also contain a **list** of such objects to ship several
-  personalities in one file.
+  skills in one file.
 - Unknown keys are ignored; missing `description`, `skills`, and
   `abilities` default to empty.
-- Re-syncing **upserts by id**: edit a personality in your repo, press
-  **Sync Agents** again, and Homee picks up the edit.
+- Re-syncing **upserts by id**: edit a skill in your repo, press
+  **Sync Skills** again, and Homee picks up the edit.
 
 ## Loading your repo in Homee
 
 1. Push the repo somewhere Homee can clone (GitHub, Gitea, a local git
    server — anything `git clone` understands).
-2. Open Homee → **Settings → Agent Personalities**.
-3. Paste the repo URL into **Remote Agent Repo** and press **Sync Agents**.
-4. Your agents appear under **Active Agents** (local agents are enabled
-   by default; the ✕ button disables any agent, the ✓ re-enables it),
-   and your personalities appear in the **New Bot** picker.
-5. Create a bot, pick the agent or personality, and chat.
+2. Open Homee → **Settings → Skills**.
+3. Paste the repo URL into **Remote Skills Repo** and press **Sync Skills**.
+4. Your skills appear under **Active Skills** (local agents are enabled
+   by default; the ✕ button disables any skill, the ✓ re-enables it),
+   and your skills appear in the **New Bot** picker.
+5. Create a bot, pick the skill, and chat.
 
 To test locally before pushing, drop the same files into `Agents/local/`
 and restart the UI service — discovery runs on startup.
@@ -111,5 +111,5 @@ and restart the UI service — discovery runs on startup.
 - [ ] Every agent has a distinct `name` (collisions overwrite silently).
 - [ ] Every `model` uses a full tag (`qwen2.5:7b`, not `qwen2.5`).
 - [ ] Agent modules import cleanly with only stdlib + `ollama` + `Agents.app`.
-- [ ] Personality JSON parses (`python -m json.tool your-file.json`).
+- [ ] Skill JSON parses (`python -m json.tool your-file.json`).
 - [ ] A README says what each agent does and what model it expects.
