@@ -628,7 +628,7 @@ button,
 
 .modal-content {
     width: 100%;
-    max-width: 700px;
+    max-width: 860px;
     max-height: 85vh;
     overflow-y: auto;
     background: var(--color-surface);
@@ -653,6 +653,10 @@ button,
     cursor: pointer;
     font-size: 1.5rem;
     color: var(--color-muted);
+}
+
+.close-modal:hover {
+    color: var(--color-text);
 }
 
 /* ==========================================================
@@ -739,28 +743,45 @@ button,
     font-weight: bold;
 }
 
-.mcp-card {
+/* ── Unified card base: LLMs, MCPs, and Skills share the same card look ── */
+.skill-card,
+.mcp-card,
+.model-card {
     border: 1px solid var(--color-border);
     border-radius: 8px;
-    padding: 12px;
-    margin: 8px 0;
-    background-color: var(--color-surface);
-    transition: transform 0.2s;
+    padding: 12px 14px;
+    margin: 0;
+    background: var(--color-surface);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.skill-card:hover,
+.mcp-card:hover,
+.model-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Enabled / loaded state: green bar + tint (matches loaded model cards). */
+.skill-card.enabled,
+.mcp-card.enabled,
+.model-card.loaded {
+    border-left: 3px solid var(--color-success);
+    background: var(--color-surface-3);
+}
+
+/* Disabled state. */
+.skill-card.disabled {
+    opacity: 0.65;
+    border-color: var(--color-border);
 }
 
 .mcp-card.selected {
     border-color: var(--color-primary);
     transform: translateY(2px);
-}
-
-.mcp-card:hover {
-    border-color: var(--color-primary);
-}
-
-/* Enabled local cards read like loaded model cards: green bar + tint. */
-.mcp-card.enabled {
-    border-left: 3px solid var(--color-success);
-    background: var(--color-surface-3);
 }
 
 .mcp-badge-leaderboard {
@@ -790,30 +811,106 @@ button,
     opacity: 0.7;
 }
 
-.skill-card {
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    padding: 12px;
-    margin: 8px 0;
-    background-color: var(--color-surface);
-    transition: background-color 0.2s;
+/* ── Skill cards: same card system as LLMs and MCPs ────────────── */
+
+.skill-card.enabled {
+    border-left: 3px solid var(--color-success);
+    background: var(--color-surface-3);
 }
 
-.skill-card:hover {
-    background-color: var(--color-hover);
+.skill-card.disabled {
+    opacity: 0.65;
+    border-color: var(--color-border);
 }
 
-.skill-item {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--color-border);
+.skill-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
-.skill-item {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--color-border);
+.skill-name {
+    font-weight: 600;
+    color: var(--color-text);
 }
+
+.skill-description {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    line-height: 1.4;
+}
+
+.skill-meta {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+}
+
+.skill-controls,
+.skill-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.skill-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    margin-left: auto;
+    border: 1px solid transparent;
+}
+
+.skill-status.active {
+    background: rgba(16, 124, 16, 0.12);
+    color: var(--color-success);
+    border-color: rgba(16, 124, 16, 0.35);
+}
+
+.skill-status.disabled {
+    background: rgba(209, 52, 56, 0.12);
+    color: var(--color-danger);
+    border-color: rgba(209, 52, 56, 0.35);
+}
+
+.skill-value {
+    font-size: 0.8rem;
+    color: var(--color-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.skill-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: white;
+}
+
+.skill-badge-local { background-color: #4a90e2; }
+.skill-badge-remote { background-color: #e91e63; }
+.skill-badge-env { background-color: #8b5cf6; }
+.skill-badge-leaderboard {
+    background-color: #b45309;
+    margin-left: auto;
+}
+
+.skill-empty {
+    grid-column: 1 / -1;
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    padding: 16px 0;
+    text-align: center;
+}
+
+/* Colored status messages used across Settings modals. */
+.status-ok { color: var(--color-success); }
+.status-bad { color: var(--color-danger); }
+.status-warn { color: var(--color-warning); }
 
 /* Mode switch tints (classes assigned by renderModeSelector; previously
    undefined, so the three modes looked identical). */
@@ -821,11 +918,7 @@ button,
 .mode-switch-local_cloud { border-left: 3px solid var(--color-primary); }
 .mode-switch-local_remote_local { border-left: 3px solid var(--color-warning); }
 
-/* Skills tab (container was unstyled). */
-.skill-list {
-    display: grid;
-    gap: 12px;
-}
+/* Skills tab uses marketplace-grid (same card system as LLMs and MCPs). */
 
 /* Mode switch internals: label over description (previously unstyled, so
    both ran together on one truncated line). */
@@ -893,6 +986,11 @@ textarea:focus-visible {
     font-size: 0.85rem;
 }
 
+.btn-save.small {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+}
+
 /* Horizontal form row (git sync, MCP add form rows). */
 .form-row {
     display: flex;
@@ -943,22 +1041,14 @@ textarea:focus-visible {
 }
 
 /* Model cards: green left border + tint when loaded on this host. */
+/* model-grid aliases marketplace-grid so LLM, MCP, and Skills grids match. */
 .model-grid {
+    padding: 20px;
     display: grid;
+    gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-}
-.model-card {
-    padding: 12px;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-surface-2);
-    cursor: pointer;
 }
 .model-card.loaded {
-    border-left: 3px solid var(--color-success);
-    background: var(--color-surface-3);
     cursor: default;
 }
 .model-header {
@@ -990,11 +1080,6 @@ textarea:focus-visible {
 .model-blurb {
     color: var(--color-muted);
     font-size: 0.9rem;
-}
-.model-pull-hint {
-    margin-top: 8px;
-    color: var(--color-primary);
-    font-size: 0.85rem;
 }
 .model-actions {
     display: flex;

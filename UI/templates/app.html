@@ -49,11 +49,11 @@
     <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg" style="display:none">
 
     <!-- CREATE BOT MODAL -->
-    <div id="newBotModal" class="modal">
+    <div id="newBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Create new bot">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Create New Bot</h3>
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" aria-label="Close">&times;</span>
             </div>
             <form id="newBotForm">
                 <div class="form-group">
@@ -93,11 +93,11 @@
     </div>
 
     <!-- EDIT BOT MODAL -->
-    <div id="editBotModal" class="modal">
+    <div id="editBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Edit bot">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Edit Bot</h3>
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" aria-label="Close">&times;</span>
             </div>
             <form id="editBotForm">
                 <input type="hidden" id="editBotId">
@@ -138,11 +138,11 @@
     </div>
 
     <!-- SKILL MODAL -->
-    <div id="skillModal" class="modal">
+    <div id="skillModal" class="modal" role="dialog" aria-modal="true" aria-label="Create or edit skill">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Skill</h3>
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" aria-label="Close">&times;</span>
             </div>
             <form id="skillForm">
                 <div class="form-group">
@@ -171,11 +171,11 @@
     </div>
 
     <!-- SETTINGS MODAL -->
-    <div id="settingsModal" class="modal">
+    <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Settings</h3>
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" aria-label="Close">&times;</span>
             </div>
 
             <!-- General settings: above the tabs, applies to all of them -->
@@ -197,8 +197,8 @@
 
             <!-- Tab Navigation -->
             <div class="tab-nav">
-                <button class="tab-btn active" data-tab="llm">LLM Provider</button>
-                <button class="tab-btn" data-tab="mcp">MCP Marketplace</button>
+                <button class="tab-btn active" data-tab="llm">LLMs</button>
+                <button class="tab-btn" data-tab="mcp">MCPs</button>
                 <button class="tab-btn" data-tab="skills">Skills</button>
             </div>
 
@@ -308,11 +308,7 @@
                            aria-label="Search MCPs">
                     <div id="mcpGrid" class="marketplace-grid"></div>
                     <div id="mcpGridNote" class="llm-status"></div>
-                    <div class="llm-status">Leaderboard snapshot · 2026-10-27 · Top servers at
-                        <a href="https://mcpmarket.com/leaderboards" target="_blank" rel="noopener">mcpmarket.com/leaderboards</a>
-                        and top skills at
-                        <a href="https://mcpmarket.com/tools/skills/leaderboard" target="_blank" rel="noopener">mcpmarket.com/tools/skills/leaderboard</a>.
-                        Your local MCP server handles custom entries — add them with the form above.
+                    <div class="llm-status">
                     </div>
                 </div>
             </div>
@@ -328,13 +324,19 @@
                 </div>
                 <div class="form-group">
                     <label>Skills</label>
-                    <div id="skillList" class="skill-list"></div>
+                    <div id="skillFilterChips" class="chip-row"></div>
+                    <input type="text" id="skillSearch" placeholder="Search skills…" aria-label="Search skills">
+                    <div id="skillList" class="marketplace-grid"></div>
+                    <div id="skillsGridNote" class="llm-status"></div>
+                </div>
+                <div class="form-group">
+                    <label>Skills from Environment</label>
+                    <div id="skillEnvList" class="marketplace-grid"></div>
                 </div>
                 <div class="form-group">
                     <label>Top Skills</label>
                     <div id="leaderboardSkillsGrid" class="marketplace-grid"></div>
-                    <div class="llm-status">Leaderboard snapshot · 2026-10-27 · See the full ranking at
-                        <a href="https://mcpmarket.com/tools/skills/leaderboard" target="_blank" rel="noopener">mcpmarket.com/tools/skills/leaderboard</a>.
+                    <div class="llm-status">
                     </div>
                 </div>
             </div>
@@ -342,11 +344,11 @@
     </div>
 
     <!-- MODEL PULL MODAL -->
-    <div id="pullModal" class="modal">
+    <div id="pullModal" class="modal" role="dialog" aria-modal="true" aria-label="Model pull progress">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Pulling model</h3>
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" aria-label="Close">&times;</span>
             </div>
             <p id="pullModalModel" class="llm-status"></p>
             <div id="pullModalStatus" class="llm-status" aria-live="polite"></div>

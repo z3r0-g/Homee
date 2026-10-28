@@ -600,11 +600,11 @@ async function saveSettings() {
     const statusEl = document.getElementById('settingsSaveStatus');
     if (data.success) {
         // Inline confirmation, then close so the user actually sees it.
-        if (statusEl) statusEl.textContent = 'Settings saved ✓';
+        setStatus(statusEl, 'Settings saved ✓', true);
         await loadSettings();
         setTimeout(() => closeModal(settingsModal), 900);
     } else {
-        if (statusEl) statusEl.textContent = 'Failed to save settings.';
+        setStatus(statusEl, 'Failed to save settings.', false);
     }
 }
 
@@ -703,15 +703,16 @@ if (editBotForm) {
                 body: JSON.stringify(payload)
             });
             if (response.ok) {
+                setStatus(statusEl, 'Bot saved.', true);
                 const modal = document.getElementById('editBotModal');
                 if (modal) closeModal(modal);
                 await loadBots();
                 openBotChat(botId);
             } else {
-                if (statusEl) statusEl.textContent = 'Failed to save bot.';
+                setStatus(statusEl, 'Failed to save bot.', false);
             }
         } catch (err) {
-            if (statusEl) statusEl.textContent = 'Failed to save bot.';
+            setStatus(statusEl, 'Failed to save bot.', false);
         }
     });
 }
@@ -1152,7 +1153,7 @@ function renderModelBrowser() {
                 </div>
                 <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
                 <div class="model-blurb">${escapeHtml(m.blurb || '')}</div>
-                ${isInstalled ? '' : '<div class="model-pull-hint">Click to pull</div>'}
+                ${isInstalled ? '' : `<button type="button" class="btn-secondary small" data-pull="${escapeHtml(m.name)}">Pull</button>`}
             </div>`;
         }).join('') || '<p style="color: var(--color-muted);">No models match this filter.</p>';
     }
@@ -1188,6 +1189,12 @@ document.addEventListener('click', async (e) => {
         await fetch(`${API_BASE}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
         await refreshModelBrowser();
         await loadLlmStatus();
+        return;
+    }
+    const pullBtn = e.target.closest('button[data-pull]');
+    if (pullBtn && document.getElementById('modelCatalogGrid')?.contains(pullBtn)) {
+        e.stopPropagation();
+        openPullModal(pullBtn.dataset.pull);
         return;
     }
     const card = e.target.closest('.model-card[data-pull]');
@@ -1517,7 +1524,7 @@ function renderMcpGrid() {
                 <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
                 <div class="mcp-description">${isLeaderboard ? `${escapeHtml(mcp.author || '')} · ${escapeHtml(mcp.category || '')} · ★ ${escapeHtml(mcp.stars || '')}` : `Source: ${escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}`}</div>
                 <div class="mcp-actions">
-                    <button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use this</button>
+                    <button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Install</button>
                     ${mcp.endpoint ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}">Import</button>` : ''}
                     ${isLeaderboard && mcp.source_url ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
                 </div>
@@ -1630,7 +1637,36 @@ if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
 
 // Top Skills: the MCP Market skills leaderboard snapshot, shown
 // alongside local skills. Discovery only — entries carry no repo
-// URL, so cards link out instead of importing.
+// Install a leaderboard skill locally (creates a local skill from the snapshot).
+async function installLeaderboardSkill(s) {
+    if (!confirm(`Install '${escapeHtml(s.name)}' as a local skill?`)) return;
+    const statusEl = document.getElementById('skillsGridNote');
+    setStatus(statusEl, `Installing '${s.name}'…`);
+    try {
+        const response = await fetch(`${API_BASE}/api/skills`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: s.name,
+                description: s.description || '',
+                skills: [],
+                abilities: [],
+                system_prompt: '',
+            }),
+        });
+        const result = await response.json();
+        if (response.ok) {
+            setStatus(statusEl, `'${s.name}' installed as a local skill.`, true);
+            await renderSkills();
+            await renderLeaderboardSkills();
+        } else {
+            setStatus(statusEl, `Install failed: ${result.error || response.status}`, false);
+        }
+    } catch (e) {
+        setStatus(statusEl, `Install failed: ${e.message}`, false);
+    }
+}
+
 async function renderLeaderboardSkills() {
     const grid = document.getElementById('leaderboardSkillsGrid');
     if (!grid) return;
@@ -1643,19 +1679,25 @@ async function renderLeaderboardSkills() {
             return;
         }
         grid.innerHTML = skills.map(s => `
-            <div class="mcp-card">
-                <div class="mcp-header">
-                    <span class="mcp-name">${escapeHtml(s.name)}</span>
-                    <span class="mcp-badge mcp-badge-leaderboard">#${s.rank}</span>
+            <div class="skill-card">
+                <div class="skill-header">
+                    <span class="skill-name">${escapeHtml(s.name)}</span>
+                    <span class="skill-badge skill-badge-leaderboard">#${s.rank}</span>
                 </div>
-                <div class="mcp-description">${escapeHtml(s.description || '')}</div>
-                <div class="mcp-description">${escapeHtml(s.author || '')} · ${escapeHtml(s.category || '')} · ★ ${escapeHtml(s.stars || '')}</div>
-                <div class="mcp-actions">
+                <div class="skill-description">${escapeHtml(s.description || '')}</div>
+                <div class="skill-meta">${escapeHtml(s.author || '')} · ${escapeHtml(s.category || '')} · ★ ${escapeHtml(s.stars || '')}</div>
+                <div class="skill-actions">
                     <button class="btn-secondary small" data-skill-view="${escapeHtml(data.source_url || '')}">View</button>
+                    <button class="btn-save small" data-skill-install="${escapeHtml(s.name)}">Install</button>
                 </div>
             </div>`).join('');
         grid.querySelectorAll('[data-skill-view]').forEach(btn => btn.addEventListener('click', () => {
             window.open(btn.dataset.skillView, '_blank', 'noopener');
+        }));
+        grid.querySelectorAll('[data-skill-install]').forEach(btn => btn.addEventListener('click', () => {
+            const name = btn.dataset.skillInstall;
+            const s = skills.find(x => x.name === name);
+            if (s) installLeaderboardSkill(s);
         }));
     } catch (e) {
         console.warn('Failed to load skills leaderboard', e);
@@ -1663,13 +1705,55 @@ async function renderLeaderboardSkills() {
     }
 }
 
-// ── Skills: local skills on by default, disableable ──────
-// The old render used skill.id / skill.status, which /api/skills/active
-// never returned — hence the literal "undefined" in every card — and its
-// inline onclick handlers were unclosed calls, so the buttons did nothing.
+// ── Skills tab: cards, filter chips, search ─────────────────────────
+// Same card system as LLMs and MCPs: marketplace grid, filter chips,
+// search, enabled (tinted) / disabled states.
+let skillFilter = 'all'; // 'all' | 'active' | 'disabled'
+let skillSearch = '';
+
+function skillCardHtml(skill) {
+    const active = skill.active !== false;
+    const source = skill.source || 'local';
+    return `
+        <div class="skill-card ${active ? 'enabled' : 'disabled'}" data-skill-id="${escapeHtml(skill.id)}">
+            <div class="skill-header">
+                <span class="skill-name">${escapeHtml(skill.name)}</span>
+                <span class="skill-badge skill-badge-${source}">${escapeHtml(source)}</span>
+                <span class="skill-status ${active ? 'active' : 'disabled'}">${active ? 'Active' : 'Disabled'}</span>
+            </div>
+            <div class="skill-description">${escapeHtml(skill.description || '')}</div>
+            <div class="skill-controls">
+                <button type="button" class="btn-icon" data-skill-action="toggle" data-skill-id="${escapeHtml(skill.id)}" title="${active ? 'Disable' : 'Enable'}" aria-label="${active ? 'Disable skill' : 'Enable skill'}">${active ? '&#10006;' : '&#10003;'}</button>
+                <button type="button" class="btn-icon" data-skill-action="import-git" data-skill-id="${escapeHtml(skill.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
+            </div>
+        </div>`;
+}
+
+function renderSkillFilterChips(skills) {
+    const row = document.getElementById('skillFilterChips');
+    if (!row) return;
+    const activeCount = skills.filter(s => s.active).length;
+    const chips = [
+        { label: 'All', value: 'all' },
+        { label: `Active (${activeCount})`, value: 'active' },
+        { label: `Disabled (${skills.length - activeCount})`, value: 'disabled' },
+    ];
+    row.innerHTML = chips.map(c => `
+        <button type="button" class="chip ${skillFilter === c.value ? 'active' : ''}" data-skill-filter="${c.value}" aria-pressed="${skillFilter === c.value}">${escapeHtml(c.label)}</button>
+    `).join('');
+    row.querySelectorAll('[data-skill-filter]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            skillFilter = btn.dataset.skillFilter;
+            renderSkills();
+        });
+    });
+}
+
 async function renderSkills() {
-    const list = document.getElementById('skillList');
-    if (!list) return;
+    const grid = document.getElementById('skillList');
+    const envGrid = document.getElementById('skillEnvList');
+    const note = document.getElementById('skillsGridNote');
+    if (!grid) return;
     try {
         const [agentsRes, envRes] = await Promise.all([
             fetch(`${API_BASE}/api/skills/active`),
@@ -1677,75 +1761,110 @@ async function renderSkills() {
         ]);
         const skills = (await agentsRes.json()).skills || [];
         const skillVars = ((await envRes.json()).vars) || {};
-        let html = '';
-        if (skills.length > 0) {
-            html += '<h4>Active Skills</h4><div class="skill-item">';
-            skills.forEach(skill => {
-                html += `
-                    <div class="skill-card" data-skill-id="${escapeHtml(skill.id)}">
-                        <div class="skill-header">
-                            <span class="skill-name">${escapeHtml(skill.name)}</span>
-                            <span class="mcp-badge ${skill.source === 'remote' ? 'mcp-badge-remote' : 'mcp-badge-local'}">${skill.source === 'remote' ? 'Remote' : 'Local'}</span>
-                            <span class="skill-status ${skill.active ? 'status-active' : 'status-inactive'}">${skill.active ? 'Active' : 'Disabled'}</span>
-                        </div>
-                        <div class="skill-description">${escapeHtml(skill.description || '')}</div>
-                        <div class="skill-controls">
-                            <button class="btn-icon" data-skill-action="toggle" data-skill-id="${escapeHtml(skill.id)}" title="${skill.active ? 'Disable' : 'Enable'}" aria-label="${skill.active ? 'Disable skill' : 'Enable skill'}">${skill.active ? '&#10006;' : '&#10003;'}</button>
-                            <button class="btn-icon" data-skill-action="import-git" data-skill-id="${escapeHtml(skill.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
-                        </div>
-                    </div>`;
-            });
-            html += '</div>';
+        renderSkillFilterChips(skills);
+
+        const query = skillSearch.trim().toLowerCase();
+        const filtered = skills.filter(s => {
+            if (skillFilter === 'active' && !s.active) return false;
+            if (skillFilter === 'disabled' && s.active) return false;
+            if (query) {
+                const haystack = `${s.name || ''} ${s.description || ''} ${s.source || ''}`.toLowerCase();
+                if (!haystack.includes(query)) return false;
+            }
+            return true;
+        });
+
+        grid.innerHTML = '';
+        if (!skills.length) {
+            grid.innerHTML = '<p class="skill-empty">No skills discovered. Sync a remote repo, or skills arrive from SKILL_* env vars.</p>';
+        } else if (!filtered.length) {
+            grid.innerHTML = '<p class="skill-empty">No skills match your filter.</p>';
         } else {
-            html += '<p style="color: var(--color-muted);">No skills discovered.</p>';
-        }
-        if (Object.keys(skillVars).length > 0) {
-            html += '<h4>Skills from Environment</h4><div class="skill-item">';
-            Object.entries(skillVars).forEach(([key, value]) => {
-                const name = key.replace('SKILL_', '').replace(/_/g, ' ');
-                html += `
-                    <div class="skill-card" data-skill-key="${escapeHtml(key)}">
-                        <span class="skill-name">${escapeHtml(name)}</span>
-                        <span class="skill-value">${escapeHtml(value.substring(0, 50))}${value.length > 50 ? '...' : ''}</span>
-                        <button class="btn-secondary small" data-env-action="disable" data-env-key="${escapeHtml(key)}">Disable</button>
-                    </div>`;
-            });
-            html += '</div>';
-        }
-        list.innerHTML = html;
-        list.querySelectorAll('[data-skill-action]').forEach(btn => btn.addEventListener('click', async () => {
-            const action = btn.dataset.skillAction;
-            const id = btn.dataset.skillId;
-            if (action === 'toggle') {
-                await fetch(`${API_BASE}/api/skills/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
-                await renderSkills();
-            } else if (action === 'import-git') {
-                if (!confirm('Import skill configuration from remote git source?')) return;
-                const response = await fetch(`${API_BASE}/api/skills/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
-                const result = await response.json();
-                const syncStatus = document.getElementById('skillsSyncStatus');
-                if (result.success) {
-                    if (syncStatus) syncStatus.textContent = 'Skill imported from Git.';
+            grid.innerHTML = filtered.map(skillCardHtml).join('');
+            grid.querySelectorAll('[data-skill-action]').forEach(btn => btn.addEventListener('click', async () => {
+                const action = btn.dataset.skillAction;
+                const id = btn.dataset.skillId;
+                if (action === 'toggle') {
+                    await fetch(`${API_BASE}/api/skills/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
                     await renderSkills();
-                } else if (syncStatus) {
-                    syncStatus.textContent = 'Failed to import from Git: ' + (result.error || '');
+                } else if (action === 'import-git') {
+                    if (!confirm('Import skill configuration from remote git source?')) return;
+                    const response = await fetch(`${API_BASE}/api/skills/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
+                    const result = await response.json();
+                    const syncStatus = document.getElementById('skillsSyncStatus');
+                    if (result.success) {
+                        setStatus(syncStatus, 'Skill imported from Git.', true);
+                        await renderSkills();
+                    } else if (syncStatus) {
+                        setStatus(syncStatus, 'Failed to import from Git: ' + (result.error || ''), false);
+                    }
                 }
-            }
-        }));
-        list.querySelectorAll('[data-env-action="disable"]').forEach(btn => btn.addEventListener('click', async () => {
-            if (!confirm('Disable this skill skill?')) return;
-            try {
-                const response = await fetch(`${API_BASE}/api/env/disable/${encodeURIComponent(btn.dataset.envKey)}`, { method: 'POST' });
-                const result = await response.json();
-                if (result.success) await renderSkills();
-            } catch (e) {
-                console.warn('Failed to disable skill skill', e);
-            }
-        }));
+            }));
+        }
+
+        renderEnvSkills(envGrid, skillVars);
+        if (note) {
+            const activeCount = skills.filter(s => s.active).length;
+            setStatus(note, `${skills.length} skill(s) discovered · ${activeCount} active`, true);
+        }
     } catch (e) {
-        console.warn('Failed to load skill skills', e);
-        list.innerHTML = '<p style="color: var(--color-muted);">Failed to load skill skills.</p>';
+        console.warn('Failed to load skills', e);
+        grid.innerHTML = '<p class="skill-empty">Failed to load skills.</p>';
     }
+}
+
+function renderEnvSkills(grid, skillVars) {
+    if (!grid) return;
+    const entries = Object.entries(skillVars);
+    if (!entries.length) {
+        grid.innerHTML = '<p class="skill-empty">No environment-configured skills.</p>';
+        return;
+    }
+    grid.innerHTML = entries.map(([key, value]) => {
+        const name = key.replace('SKILL_', '').replace(/_/g, ' ');
+        const short = value.length > 60 ? value.slice(0, 57) + '…' : value;
+        return `
+            <div class="skill-card" data-skill-key="${escapeHtml(key)}">
+                <div class="skill-header">
+                    <span class="skill-name">${escapeHtml(name)}</span>
+                    <span class="skill-badge skill-badge-env">Env</span>
+                </div>
+                <div class="skill-value" title="${escapeHtml(value)}">${escapeHtml(short)}</div>
+                <div class="skill-controls">
+                    <button type="button" class="btn-secondary small" data-env-action="disable" data-env-key="${escapeHtml(key)}">Disable</button>
+                </div>
+            </div>`;
+    }).join('');
+    grid.querySelectorAll('[data-env-action="disable"]').forEach(btn => btn.addEventListener('click', async () => {
+        if (!confirm('Disable this skill?')) return;
+        try {
+            const response = await fetch(`${API_BASE}/api/env/disable/${encodeURIComponent(btn.dataset.envKey)}`, { method: 'POST' });
+            const result = await response.json();
+            if (result.success) await renderSkills();
+        } catch (e) {
+            console.warn('Failed to disable skill', e);
+        }
+    }));
+}
+
+// Set a colored status message on an llm-status element.
+function setStatus(el, text, ok) {
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'llm-status' + (ok === true ? ' status-ok' : ok === false ? ' status-bad' : '');
+}
+
+// Skills search: debounced, re-renders the grid on every change.
+const skillSearchInput = document.getElementById('skillSearch');
+if (skillSearchInput) {
+    let skillSearchTimer = null;
+    skillSearchInput.addEventListener('input', () => {
+        clearTimeout(skillSearchTimer);
+        skillSearchTimer = setTimeout(() => {
+            skillSearch = skillSearchInput.value;
+            renderSkills();
+        }, 250);
+    });
 }
 
 // Remote git repo for skills: save the URL, then re-discover (clone/pull).
@@ -1754,7 +1873,7 @@ if (skillsSyncBtn) skillsSyncBtn.addEventListener('click', async () => {
     const input = document.getElementById('settingsSkillsGitUrl');
     const statusEl = document.getElementById('skillsSyncStatus');
     const gitUrl = input ? input.value.trim() : '';
-    if (statusEl) statusEl.textContent = 'Saving repo and syncing…';
+    setStatus(statusEl, 'Saving repo and syncing…');
     try {
         await fetch(`${API_BASE}/api/settings`, {
             method: 'POST',
@@ -1763,10 +1882,10 @@ if (skillsSyncBtn) skillsSyncBtn.addEventListener('click', async () => {
         });
         const response = await fetch(`${API_BASE}/api/skills/refresh`, { method: 'POST' });
         const data = await response.json();
-        if (statusEl) statusEl.textContent = `Synced — ${(data.skills || []).length} skill(s) discovered.`;
+        setStatus(statusEl, `Synced — ${(data.skills || []).length} skill(s) discovered.`, true);
         await renderSkills();
     } catch (e) {
-        if (statusEl) statusEl.textContent = `Sync failed: ${e.message}`;
+        setStatus(statusEl, `Sync failed: ${e.message}`, false);
     }
 });
 
