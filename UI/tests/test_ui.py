@@ -281,6 +281,31 @@ def test_mcp_import_rejects_leaderboard_entry(client, monkeypatch):
     assert "no endpoint" in resp.get_json()["error"]
 
 
+def test_mcp_remote_enriches_leaderboard_endpoint(client, monkeypatch):
+    """A leaderboard entry whose ID also appears in the marketplace
+    gets its endpoint enriched so the card can offer Import instead of
+    the manual Use-this flow."""
+    import UI.routes.mcps as mcps_routes
+
+    def _stub_with_match(method, path, json_body=None):
+        if method == "GET" and path == "/api/mcp/marketplace":
+            return {"mcps": [
+                {"id": "built1", "name": "Built One", "endpoint": "https://built.example"},
+                {"id": "lb-mcp-1", "name": "Reverse Engineer Anything", "endpoint": "https://mcp.reverse.example"},
+            ]}, 200
+        if method == "POST" and path == "/api/mcps":
+            return {"success": True, "mcp": json_body}, 200
+        return {"error": "not found"}, 404
+
+    monkeypatch.setattr(mcps_routes, "_proxy", _stub_with_match)
+    resp = client.get("/api/mcp/remote")
+    assert resp.status_code == 200
+    mcps = resp.get_json()["mcps"]
+    lb = [m for m in mcps if m["id"] == "lb-mcp-1"][0]
+    assert lb["endpoint"] == "https://mcp.reverse.example"  # enriched from marketplace
+    assert lb["source"] == "Leaderboard" and lb["rank"] == 1  # leaderboard metadata preserved
+
+
 def test_skills_leaderboard_returns_snapshot(client):
     resp = client.get("/api/skills/leaderboard")
     assert resp.status_code == 200

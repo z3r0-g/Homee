@@ -111,7 +111,18 @@ def mcp_remote():
             entry.setdefault("endpoint", "")
             entry.setdefault("method", "GET")
             entry.setdefault("auth_note", "")
-            merged.setdefault(entry["id"], entry)
+            mcp_id = entry["id"]
+            if mcp_id in merged:
+                # Enrich leaderboard entry with resolved endpoint from
+                # the marketplace catalogue (leaderboard entries ship with
+                # endpoint="" by design, so "Use" never had a URL to offer).
+                if entry.get("endpoint") and not merged[mcp_id].get("endpoint"):
+                    merged[mcp_id]["endpoint"] = entry["endpoint"]
+                    merged[mcp_id]["method"] = entry.get("method") or merged[mcp_id]["method"]
+                    merged[mcp_id]["source_url"] = entry.get("source_url") or merged[mcp_id]["source_url"]
+                    merged[mcp_id]["auth_note"] = entry.get("auth_note") or merged[mcp_id]["auth_note"]
+            else:
+                merged[mcp_id] = entry
     return jsonify({"mcps": list(merged.values())})
 
 

@@ -43,6 +43,12 @@ async function init() {
     setupTabNavigation();
     renderModeSelector();
     await initMCPAndSkills();
+    // Set initial sidebar state on mobile (collapsed by default).
+    if (window.innerWidth <= 768) {
+        toggleSidebar(false);
+    }
+    // Refresh header status pills (LLM status loads immediately below).
+    loadMcpStatus();
 }
 
 // Load bots from API
@@ -611,6 +617,7 @@ async function saveSettings() {
 // Event Listeners Setup
 if (newBotBtn) {
     newBotBtn.addEventListener('click', () => {
+        toggleSidebar(false);
         document.getElementById('newBotForm').reset();
         document.getElementById('scheduleOptions').style.display = 'none';
         newBotModal.classList.add('active');
@@ -619,9 +626,70 @@ if (newBotBtn) {
 
 if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
+        toggleSidebar(false);
         loadSettings();
         settingsModal.classList.add('active');
     });
+}
+
+// ── Sidebar toggle (mobile drawer) ────────────────────────────────────
+const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
+const sidebarOverlay = document.getElementById('sidebarOverlay');
+const sidebarEl = document.getElementById('sidebar');
+
+function toggleSidebar(open) {
+    const isOpen = open !== false;
+    if (sidebarToggleBtn) sidebarToggleBtn.setAttribute('aria-expanded', String(isOpen));
+    if (sidebarEl) sidebarEl.classList.toggle('mobile-expanded', isOpen);
+    if (sidebarOverlay) sidebarOverlay.classList.toggle('active', isOpen);
+}
+
+if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener('click', () => {
+        toggleSidebar();
+    });
+}
+
+if (sidebarOverlay) {
+    sidebarOverlay.addEventListener('click', () => {
+        toggleSidebar(false);
+    });
+}
+
+const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
+if (sidebarCloseBtn) {
+    sidebarCloseBtn.addEventListener('click', () => {
+        toggleSidebar(false);
+    });
+}
+
+// Close sidebar when a bot is opened on mobile.
+if (sidebarEl && chatArea) {
+    chatArea.addEventListener('click', (e) => {
+        const botItem = e.target.closest('.bot-item');
+        if (botItem && window.innerWidth <= 768) {
+            toggleSidebar(false);
+        }
+    });
+}
+
+// ── Skills status pill: opens Settings → Skills tab ───────────────────
+// Like the MCP pill, clicking it loads settings and jumps to a tab.
+const skillsPill = document.getElementById('skillsPill');
+if (skillsPill) {
+    skillsPill.addEventListener('click', () => {
+        toggleSidebar(false);
+        loadSettings();
+        settingsModal.classList.add('active');
+        document.querySelector('.tab-btn[data-tab="skills"]')?.click();
+        const skillsTab = document.getElementById('tab-skills');
+        if (skillsTab) skillsTab.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+}
+
+// Set initial sidebar state on mobile (collapsed by default).
+if (window.innerWidth <= 768) {
+    toggleSidebar(false);
 }
 
 const newBotScheduleEl = document.getElementById('newBotSchedule');
@@ -670,6 +738,7 @@ async function openEditBot(botId) {
         document.getElementById('editBotCron').value = (bot.config && bot.config.cron_expression) || '';
         toggleEditScheduleGroups(schedule);
         document.getElementById('editBotStatus').textContent = '';
+        toggleSidebar(false);
         document.getElementById('editBotModal').classList.add('active');
     } catch (e) {
         console.warn('Failed to open bot editor', e);
@@ -886,6 +955,7 @@ if (chatSearchInput && chatSearchResults) {
 // Status pill opens Settings (it reports what Settings configures).
 const llmStatusPill = document.getElementById('llmStatusPill');
 if (llmStatusPill) llmStatusPill.addEventListener('click', () => {
+    toggleSidebar(false);
     loadSettings();
     settingsModal.classList.add('active');
 });
@@ -893,6 +963,7 @@ if (llmStatusPill) llmStatusPill.addEventListener('click', () => {
 // MCP pill mirrors it, landing on the MCP tab instead of the default one.
 const mcpStatusPill = document.getElementById('mcpStatusPill');
 if (mcpStatusPill) mcpStatusPill.addEventListener('click', () => {
+    toggleSidebar(false);
     loadSettings();
     settingsModal.classList.add('active');
     document.querySelector('.tab-btn[data-tab="mcp"]')?.click();
@@ -1515,6 +1586,8 @@ function renderMcpGrid() {
             </div>`;
         }
         const isLeaderboard = mcp.source === 'Leaderboard';
+        const hasEndpoint = Boolean(mcp.endpoint);
+        const imported = mcp.imported === true || mcp.imported === 'true';
         return `
             <div class="mcp-card">
                 <div class="mcp-header">
@@ -1524,16 +1597,16 @@ function renderMcpGrid() {
                 <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
                 <div class="mcp-description">${isLeaderboard ? `${escapeHtml(mcp.author || '')} · ${escapeHtml(mcp.category || '')} · ★ ${escapeHtml(mcp.stars || '')}` : `Source: ${escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}`}</div>
                 <div class="mcp-actions">
-                    <button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Install</button>
-                    ${mcp.endpoint ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}">Import</button>` : ''}
-                    ${isLeaderboard && mcp.source_url ? `<button class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
+                    ${hasEndpoint ? `<button type="button" class="btn-secondary small ${imported ? 'btn-disabled' : ''}" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}" ${imported ? 'disabled title="Already installed in Local MCPs"' : ''}>${imported ? 'Imported' : 'Import →'}</button>` : ''}
+                    ${!hasEndpoint && mcp.source_url ? `<button type="button" class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use →</button>` : ''}
+                    ${isLeaderboard && mcp.source_url ? `<button type="button" class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
                 </div>
             </div>`;
     }).join('');
-    grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async () => {
-        const action = btn.dataset.mcpAction;
-        const kind = btn.dataset.mcpKind;
-        const id = btn.dataset.mcpId;
+    grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async (evt) => {
+        const action = evt.currentTarget.dataset.mcpAction;
+        const kind = evt.currentTarget.dataset.mcpKind;
+        const id = evt.currentTarget.dataset.mcpId;
         if (kind === 'local') {
             if (action === 'remove') {
                 if (!confirm('Remove this MCP?')) return;
@@ -1548,15 +1621,54 @@ function renderMcpGrid() {
         const entry = remoteMcpCache[id];
         if (!entry) return;
         if (action === 'use') {
+            // The cached entry may lack an endpoint (leaderboard entries
+            // ship with endpoint=""). Re-fetch the remote catalogue —
+            // the backend now enriches leaderboard entries with marketplace
+            // endpoints — so the form is prefilled with a real URL.
+            if (!entry.endpoint) {
+                const statusEl = document.getElementById('mcpAddStatus');
+                if (statusEl) statusEl.textContent = `Resolving ${entry.name}…`;
+                try {
+                    const res = await fetch(`${API_BASE}/api/mcp/remote`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const found = (data.mcps || []).find(m => m.id === id);
+                        if (found && found.endpoint) {
+                            entry = found;
+                            remoteMcpCache[id] = entry;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Failed to resolve MCP endpoint from catalogue', e);
+                }
+            }
             prefillMcpForm(entry);
         } else if (action === 'import') {
-            setMcpAddCollapsed(false);
-            const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
-            const result = await res.json();
+            const isMarketplaceImport = kind === 'remote';
+            const btn = isMarketplaceImport ? evt.currentTarget : null;
             const statusEl = document.getElementById('mcpAddStatus');
-            if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
-            await loadMcps();
-            await loadMcpStatus();
+            if (isMarketplaceImport && btn) {
+                btn.disabled = true;
+                btn.textContent = 'Importing…';
+                if (statusEl) statusEl.textContent = `Importing ${entry.name}…`;
+            } else {
+                setMcpAddCollapsed(false);
+                if (statusEl) statusEl.textContent = `Importing ${entry.name}…`;
+            }
+            try {
+                const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
+                const result = await res.json();
+                if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
+                await loadMcps();
+                await loadMcpStatus();
+            } catch (e) {
+                if (statusEl) statusEl.textContent = `Import failed: ${e.message}`;
+            } finally {
+                if (isMarketplaceImport && btn) {
+                    btn.disabled = false;
+                    btn.textContent = entry.imported ? 'Imported' : 'Import →';
+                }
+            }
         } else if (action === 'view') {
             window.open(entry.source_url, '_blank', 'noopener');
         }
@@ -1592,7 +1704,7 @@ function prefillMcpForm(entry) {
     const statusEl = document.getElementById('mcpAddStatus');
     if (statusEl) statusEl.textContent = entry.endpoint
         ? `'${entry.name}' ready — press Add MCP to register it.`
-        : `'${entry.name}' needs an endpoint URL — fill it in, then Add MCP.`;
+        : `'${entry.name}' endpoint not found in catalogue — check the source repository or add manually.`;
     setMcpAddCollapsed(false);
     const endpointEl = document.getElementById('mcpEndpoint');
     if (endpointEl) endpointEl.focus();
@@ -1638,34 +1750,7 @@ if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
 // Top Skills: the MCP Market skills leaderboard snapshot, shown
 // alongside local skills. Discovery only — entries carry no repo
 // Install a leaderboard skill locally (creates a local skill from the snapshot).
-async function installLeaderboardSkill(s) {
-    if (!confirm(`Install '${escapeHtml(s.name)}' as a local skill?`)) return;
-    const statusEl = document.getElementById('skillsGridNote');
-    setStatus(statusEl, `Installing '${s.name}'…`);
-    try {
-        const response = await fetch(`${API_BASE}/api/skills`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name: s.name,
-                description: s.description || '',
-                skills: [],
-                abilities: [],
-                system_prompt: '',
-            }),
-        });
-        const result = await response.json();
-        if (response.ok) {
-            setStatus(statusEl, `'${s.name}' installed as a local skill.`, true);
-            await renderSkills();
-            await renderLeaderboardSkills();
-        } else {
-            setStatus(statusEl, `Install failed: ${result.error || response.status}`, false);
-        }
-    } catch (e) {
-        setStatus(statusEl, `Install failed: ${e.message}`, false);
-    }
-}
+
 
 async function renderLeaderboardSkills() {
     const grid = document.getElementById('leaderboardSkillsGrid');
@@ -1691,14 +1776,43 @@ async function renderLeaderboardSkills() {
                     <button class="btn-save small" data-skill-install="${escapeHtml(s.name)}">Install</button>
                 </div>
             </div>`).join('');
-        grid.querySelectorAll('[data-skill-view]').forEach(btn => btn.addEventListener('click', () => {
-            window.open(btn.dataset.skillView, '_blank', 'noopener');
-        }));
-        grid.querySelectorAll('[data-skill-install]').forEach(btn => btn.addEventListener('click', () => {
-            const name = btn.dataset.skillInstall;
+        grid.querySelectorAll('[data-skill-install]').forEach(btn => btn.addEventListener('click', async (evt) => {
+            const name = evt.currentTarget.dataset.skillInstall;
             const s = skills.find(x => x.name === name);
-            if (s) installLeaderboardSkill(s);
+            if (!s) return;
+            const confirmOk = confirm(`Install '${escapeHtml(s.name)}' as a local skill?`);
+            if (!confirmOk) return;
+            const statusEl = document.getElementById('skillsSyncStatus');
+            evt.currentTarget.disabled = true;
+            evt.currentTarget.textContent = 'Installing…';
+            try {
+                const response = await fetch(`${API_BASE}/api/skills`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: s.name,
+                        description: s.description || '',
+                        skills: [],
+                        abilities: [],
+                        system_prompt: '',
+                    }),
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    setStatus(statusEl, `'${s.name}' installed as a local skill.`, true);
+                    await renderSkills();
+                    await renderLeaderboardSkills();
+                } else {
+                    setStatus(statusEl, `Install failed: ${result.error || response.status}`, false);
+                }
+            } catch (e) {
+                setStatus(statusEl, `Install failed: ${e.message}`, false);
+            } finally {
+                evt.currentTarget.disabled = false;
+                evt.currentTarget.textContent = 'Install';
+            }
         }));
+
     } catch (e) {
         console.warn('Failed to load skills leaderboard', e);
         grid.innerHTML = '<p style="color: var(--color-muted);">Leaderboard unavailable.</p>';

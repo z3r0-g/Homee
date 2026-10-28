@@ -1,3 +1,29 @@
+/* Header wraps on narrow viewports so the Marketplace button stays reachable. */
+@media (max-width: 768px) {
+    .topbar {
+        flex-wrap: wrap;
+        padding: 0 12px;
+        gap: 8px;
+    }
+
+    .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin-left: auto;
+    }
+
+    .header-status {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+    }
+
+    /* Hide status pills on mobile to keep the header clean. */
+    .header-actions .header-status {
+        display: none;
+    }
+}
 /* ==========================================================
    Homee AI Agent Platform
    Modern Dashboard Theme
@@ -172,6 +198,11 @@ body {
     color: var(--color-text);
 }
 
+/* Hide sidebar close button except on mobile. */
+.sidebar-close {
+    display: none;
+}
+
 .sidebar-content {
     flex: 1;
     overflow-y: auto;
@@ -296,15 +327,16 @@ button,
 .chat-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     padding-bottom: 16px;
     margin-bottom: 16px;
     border-bottom: 1px solid var(--color-border);
 }
 
 .chat-title {
-    font-size: 1.1rem;
+    font-size: 1.25rem;
     font-weight: 600;
+    color: var(--color-text);
 }
 
 .chat-host {
@@ -615,7 +647,7 @@ button,
     display: none;
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 1101;
     padding: 20px;
     background: rgba(0, 0, 0, 0.6);
     justify-content: center;
@@ -660,9 +692,24 @@ button,
 }
 
 /* ==========================================================
-   Mobile
+   Mobile — Safe area & base
    ========================================================== */
 
+/* Viewport safe-area insets for devices with notches, home indicators,
+   or gesture bars (iPhone X+, Android 14+ gesture nav). */
+.modal {
+    padding: calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom));
+}
+
+.modal-content {
+    max-height: calc(100vh - 48px - calc(16px + env(safe-area-inset-top)) - calc(16px + env(safe-area-inset-bottom)));
+}
+
+.chat-area {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+/* Mobile — base layout */
 @media (max-width: 768px) {
     .app-container {
         flex-direction: column;
@@ -672,6 +719,7 @@ button,
         width: 100%;
         min-width: 100%;
         height: auto;
+        box-shadow: var(--shadow-md);
     }
 
     .sidebar-content {
@@ -688,6 +736,144 @@ button,
 
     .chat-composer {
         flex-wrap: wrap;
+    }
+}
+
+/* ── Sidebar toggle (mobile drawer) ──────────────────────────────── */
+
+.sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 4px;
+    z-index: 1100;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: var(--color-surface);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-primary);
+    transition: background 0.15s ease;
+}
+
+.sidebar-toggle:hover {
+    background: var(--color-surface-2);
+}
+
+.sidebar-toggle:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.sidebar-toggle[aria-expanded="true"] {
+    background: var(--color-primary);
+    color: white;
+}
+
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(1px);
+}
+
+.sidebar-overlay.active {
+    display: block;
+}
+
+/* Mobile: sidebar becomes a full-screen drawer; the toggle shows. */
+@media (max-width: 768px) {
+    .sidebar-toggle {
+        display: flex;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 1060;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        width: 88vw;
+        max-width: 320px;
+    }
+
+    .sidebar.mobile-expanded {
+        transform: translateX(0);
+    }
+
+    .sidebar-overlay.active {
+        display: block;
+    }
+
+    .sidebar-header {
+        padding: 16px 16px 12px;
+        position: relative;
+    }
+
+    .sidebar-close {
+        display: inline-flex;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: transparent;
+        border: none;
+        font-size: 1.5rem;
+        color: var(--color-muted);
+        cursor: pointer;
+        line-height: 1;
+        padding: 4px;
+        border-radius: 6px;
+    }
+    .sidebar-close:hover {
+        background: var(--color-surface-2);
+        color: var(--color-text);
+    }
+
+    .sidebar-content {
+        max-height: calc(100vh - 100px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .sidebar-footer {
+        padding: 12px 16px 16px;
+    }
+
+    .sidebar-footer button {
+        flex: 1;
+    }
+
+    .chat-area {
+        padding: 12px 16px;
+    }
+
+    .message {
+        max-width: 94%;
+    }
+
+    .chat-composer {
+        flex-wrap: wrap;
+    }
+
+    .chat-composer button,
+    .chat-composer .btn-save {
+        flex-shrink: 0;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 14px;
+    }
+
+    .chat-composer .chat-input {
+        min-height: 48px;
     }
 }
 .mode-switches {
@@ -942,6 +1128,14 @@ button,
 button.mode-switch {
     font-family: inherit;
     text-align: left;
+}
+
+/* Disabled: dimmed, not interactive, but still visible. */
+.btn-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--color-surface-2) !important;
+    border-color: var(--color-border) !important;
 }
 
 /* Visible keyboard focus on every interactive control. */
@@ -1209,7 +1403,7 @@ textarea:focus-visible {
 
 .sidebar-search input {
     width: 100%;
-    padding: 10px 12px;
+    padding: 16px 12px;
     background: var(--color-surface-2);
     color: var(--color-text);
     border: 1px solid var(--color-border);
@@ -1278,4 +1472,89 @@ textarea:focus-visible {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Tighten in-chat UX on mobile: reduce vertical spacing, smaller
+   padding on messages, tighter composer, compact bot-info bar. */
+@media (max-width: 768px) {
+    .chat-area {
+        padding: 8px;
+    }
+
+    .chat-header {
+        padding-bottom: 10px;
+        margin-bottom: 10px;
+    }
+
+    .chat-title {
+        font-size: 1.1rem;
+    }
+
+    .chat-history {
+        gap: 8px;
+    }
+
+    .message {
+        max-width: 94%;
+        padding: 10px 12px;
+        border-radius: 10px;
+    }
+
+    .message-label {
+        margin-bottom: 3px;
+        font-size: 0.7rem;
+    }
+
+    .message-content {
+        line-height: 1.5;
+    }
+
+    .bot-info {
+        padding: 10px;
+        margin-bottom: 8px;
+    }
+
+    .bot-info .bot-meta {
+        font-size: 0.78rem;
+    }
+
+    .bot-info .bot-actions {
+        gap: 6px;
+    }
+
+    .starter-prompts {
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+
+    .chat-composer {
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+    }
+
+    .attached-file-bar {
+        margin-bottom: 8px;
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
+
+    /* Stack composer buttons on mobile for better touch spacing. */
+    .chat-composer .btn-save,
+    .chat-composer #attachFileBtn,
+    .chat-composer #runTaskBtn {
+        flex: 0 0 auto;
+    }
+
+    /* Model switch takes full width on mobile, above the input row. */
+    .chat-composer .model-switch {
+        order: -1;
+        width: 100%;
+    }
+
+    .chat-composer .model-switch button {
+        flex: 1;
+        padding: 6px 10px;
+        font-size: 0.8rem;
+    }
 }

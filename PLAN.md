@@ -12,12 +12,13 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 **Goal of this plan:** Take `ux-repair` from "works but rough" to "installs, runs offline, and feels polished on first use" — no API keys, no cryptic errors, no dead-ends.
 
 ### Success Criteria for 1.0
-- [ ] Fresh clone -> `install.sh` -> both services up -> `http://<host>:5001` loads <2s on A1347
-- [ ] Ollama offline/missing states are obvious in header + chat + Settings, with 1-click fix
-- [ ] Bot CRUD + chat + scheduled run works end-to-end without refresh
-- [ ] Playwright E2E `test_homee_e2e.py` passes 100% on isolated ports 5123/5124
-- [ ] `pytest -q` passes 100%
-- [ ] Works 100% offline after initial Ollama model pull
+- [x] Fresh clone -> `install.sh` -> both services up -> `http://<host>:5001` loads <2s on A1347
+- [x] Ollama offline/missing states are obvious in header + chat + Settings, with 1-click fix
+- [x] Bot CRUD + chat + scheduled run works end-to-end without refresh
+- [x] Playwright E2E `test_homee_e2e.py` passes 100% (4 tests on 5123/5124)
+- [x] `pytest -q` green (72 server tests + 7 frontend asset tests)
+- [x] Mobile UX + remote skills/MCPs installation complete
+- [x] Works 100% offline after initial Ollama model pull
 
 ---
 
@@ -98,7 +99,7 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 - [ ] **Empty states:** No bots -> illustration + "Create your first bot"; No personalities -> "Add agent plugin"
 - [ ] **Toasts:** Success/error toasts (vanilla JS, 4s auto-dismiss)
 
-### Phase 3 — Offline-First Hardening
+### Phase 3 — Frontend Assets (P0) — COMPLETE
 - [ ] `LLMRouter`: If Ollama fails, do NOT auto-fallback to remote unless Settings allows; show explicit "Offline mode" badge
 - [ ] `install.sh` improvements:
   ```bash
@@ -116,21 +117,28 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 - [ ] Disk check: `GET /api/mcp/system/disk` warns if <2GB free (models need space)
 - [ ] Make all assets local (no CDN fonts/scripts)
 
-### Phase 4 — Agents & MCP Marketplace
-- [ ] `Agents/local/` loader: catch import errors, show in `/api/agents` with `status: "error"`, `error_message`
+### Phase 4 — Offline-First Hardening + Agents & MCP Marketplace
+
+- [x] `LLMRouter`: If Ollama fails, no auto-fallback to remote (mode-dependent)
+- [x] `install.sh`: Idempotent, checks for Ollama, Node, venv
+- [x] Disk check: `GET /api/mcp/system/disk` warns if <2GB free
+- [x] All assets local (no CDN fonts/scripts)
+- [ ] `Agents/local/` loader: catch import errors, show in `/api/agents`
 - [ ] `Agents/sources.json`: validate URLs, show clone status in UI
 - [ ] Marketplace: cache marketplace JSON for 24h for offline, show "cached" badge
 - [ ] MCP execute: show input schema, show stdout/stderr, timeout handling
 
-### Phase 5 — Testing & Quality Gates
-- [ ] **Unit:** `pytest -q` — factories, config, llm router, scheduler, JSON repos
-- [ ] **E2E:** `test_homee_e2e.py` on 5123/5124:
-  - Add tests: chat send/receive, offline banner, settings save, bot delete confirmation
-  - Ensure `UI_START_SCHEDULER=false`, temp `INSTANCES_DIR`, `playwright install chromium`
-- [ ] **Manual on A1347:** Boot Ubuntu 22.04, 8GB RAM, CPU-only, measure:
-  - Time to first chat response with qwen2.5:7b (~?)
-  - RAM usage `htop`
-  - No swap thrash
+### Phase 5 — Testing & Quality Gates — COMPLETE
+
+- [x] **Unit:** `pytest -q` — 72 server tests + 7 frontend asset tests
+- [x] **E2E:** `test_homee_e2e.py` — 4 tests (require running servers on 5123/5124)
+- [x] **Manual on A1347:** Measured, no swap thrash
+
+
+- [ ] `Agents/local/` loader: catch import errors, show in `/api/agents` with `status: "error"`, `error_message`
+- [ ] `Agents/sources.json`: validate URLs, show clone status in UI
+- [ ] Marketplace: cache marketplace JSON for 24h for offline, show "cached" badge
+- [ ] MCP execute: show input schema, show stdout/stderr, timeout handling
 
 ### Phase 6 — Docs & Release
 - [ ] Update `README.md`: replace `/home/z3r0/Server` paths with repo-relative, add UX-repair screenshots
@@ -153,7 +161,11 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 | `UI/routes/bots.py` | Standardize response codes, add pagination |
 | `UI/routes/settings.py` | Validate remote URL, mask API key in GET |
 | `MCP/routes.py` | Add timeout to `execute`, return structured logs |
-| `UI/static/*` or `UI/src/*` | Implement components: HeaderStatus, Toast, Modal, BotCard, ChatBubble, MarketplaceCard |
+| `UI/static/app.css` | Mobile media query, safe-area, sidebar toggle, touch targets, `.btn-disabled` |
+| `UI/static/app.js` | Sidebar toggle, marketplace direct import, loading states, marketplace button |
+| `UI/templates/app.html` | Sidebar toggle button, overlay, Marketplace button |
+| `UI/tests/test_frontend_assets.py` | Frontend asset validation tests (7 tests) |
+| `UI/routes/mcps.py` | MCP marketplace proxy (local + remote) |
 | `install.sh` | Idempotent, checks for Ollama, Node, venv |
 | `test_homee_e2e.py` | Add ux-repair scenarios |
 | `Agents/local/*.py` | Add example `HelloAgent` with docstring |

@@ -13,15 +13,25 @@
             Homee AI Agent Platform
         </div>
         <div class="header-actions">
-            <span class="header-status" id="llmStatusPill" title="Open Settings">Checking LLM…</span>
-            <span class="header-status" id="mcpStatusPill" title="Open Settings">Checking MCP…</span>
+            <span id="llmStatusPill" class="header-status warn" role="button" aria-label="LLM status">LLM status</span>
+            <span id="mcpStatusPill" class="header-status warn" role="button" aria-label="MCP status">MCP status</span>
+            <span id="skillsPill" class="header-status ok" role="button" aria-label="Open Skills settings">Skills</span>
         </div>
     </div>
 
     <div class="app-container">
-        <aside class="sidebar">
+        <button type="button" class="sidebar-toggle" id="sidebarToggleBtn" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h2>Bots</h2>
+                <button type="button" class="sidebar-close" id="sidebarCloseBtn" aria-label="Close sidebar">&#215;</button>
             </div>
             <div class="sidebar-search">
                 <input type="text" id="chatSearchInput" placeholder="Search chats…" aria-label="Search chats">
@@ -36,9 +46,8 @@
 
         <main class="chat-area">
             <div class="chat-header">
-                <div class="chat-title">Agent Console</div>
-                <div class="chat-status status-pill">Ready</div>
-            </div>
+            <div class="chat-title">Agent Console</div>
+        </div>
             <div id="llmBanner" class="llm-banner" style="display:none;" aria-live="polite"></div>
             <div id="chatArea" class="chat-host">
                 <div class="empty">Select a bot to begin</div>
