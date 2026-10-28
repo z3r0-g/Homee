@@ -8,17 +8,16 @@ import pytest
 
 from UI.app import create_ui_app
 from UI.config import SETTINGS_FILE
-from UI.models import bots_repo, personalities_repo, mcps_repo
+from UI.models import bots_repo, skills_repo, mcps_repo
 
 
 def _reset_state() -> None:
-    """Clear in-memory repo state and persisted JSON files for test isolation."""
+    """Clear in-memory repo state and persisted files for test isolation."""
     bots_repo._bots.clear()
-    personalities_repo._personalities.clear()
+    skills_repo._skills.clear()
     mcps_repo._mcps.clear()
     for path in (
         bots_repo._path,
-        personalities_repo._path,
         mcps_repo._path,
         Path(SETTINGS_FILE),
     ):
@@ -26,6 +25,13 @@ def _reset_state() -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
+    d = skills_repo._dir
+    if d.exists():
+        for f in d.glob("*.md"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 @pytest.fixture
@@ -34,6 +40,7 @@ def app(tmp_path, monkeypatch):
     tmp_settings = tmp_path / "settings.json"
     monkeypatch.setenv("UI_START_SCHEDULER", "false")
     monkeypatch.setattr("UI.config.SETTINGS_FILE", tmp_settings)
+    monkeypatch.setattr("UI.models.skills_repo._dir", tmp_path / "skills")
 
     app = create_ui_app()
     app.config["TESTING"] = True

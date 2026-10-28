@@ -8,8 +8,8 @@ from flask import Blueprint, jsonify, request
 
 from ..config import MCP_SERVICE_URL
 from ..llm import LLMRouter
-from ..models import bots_repo, personalities_repo, Bot, BotConfig
-from Agents.local.demo import get_server_health
+from ..models import bots_repo, skills_repo, Bot, BotConfig
+from Skills.local.demo import get_server_health
 
 bots_bp = Blueprint("bots", __name__)
 llm_router = LLMRouter()
@@ -41,7 +41,7 @@ def list_bots():
 def create_bot():
     data = request.get_json(silent=True) or {}
     name = data.get("name", "New Bot")
-    personality_id = data.get("personality_id", "")
+    skill_id = data.get("skill_id", "")
     schedule_type = data.get("schedule_type", "none")
     interval_seconds = int(data.get("interval_seconds", 3600))
     task_prompt = data.get("task_prompt", "")
@@ -52,7 +52,7 @@ def create_bot():
     bot = Bot(
         id=bot_id,
         name=name,
-        personality_id=personality_id,
+        skill_id=skill_id,
         knowledge_base_path=str(KNOWLEDGE_DIR / f"kb_{bot_id}.md"),
         config=BotConfig(
             schedule_type=schedule_type,
@@ -117,8 +117,8 @@ def update_bot(bot_id):
         return jsonify({"error": "Bot not found"}), 404
     if "name" in data:
         bot.name = data["name"]
-    if "personality_id" in data:
-        bot.personality_id = data["personality_id"]
+    if "skill_id" in data:
+        bot.skill_id = data["skill_id"]
     if "status" in data:
         bot.status = data["status"]
     if "mcps" in data:
@@ -152,7 +152,7 @@ def delete_bot(bot_id):
 @bots_bp.route("/api/bots/<bot_id>/chat", methods=["POST"])
 def chat_bot(bot_id):
     bots_repo.load()
-    personalities_repo.load()
+    skills_repo.load()
     bot = bots_repo.get(bot_id)
     if not bot:
         return jsonify({"error": "Bot not found"}), 404
@@ -176,8 +176,8 @@ def chat_bot(bot_id):
     attachment_text = attachment_text[:100_000]
 
     sent_at = _iso()
-    personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
-    system_prompt = personality.system_prompt if personality else ""
+    skill = skills_repo.get(bot.skill_id) if bot.skill_id else None
+    system_prompt = skill.system_prompt if skill else ""
 
     messages = [{"role": "system", "content": system_prompt}]
     if attachment_text.strip():
@@ -200,13 +200,13 @@ def chat_bot(bot_id):
     return jsonify({
         "response": assistant_response,
         "bot_id": bot_id,
-        "personality": bot.personality_id,
+        "skill": bot.skill_id,
     })
 
 
 @bots_bp.route("/api/bots/<bot_id>/run", methods=["POST"])
 def run_bot(bot_id):
-    """Execute a Bot's scheduled task using its assigned Agent personality."""
+    """Execute a Bot's scheduled task using its assigned skill."""
     data = request.get_json(silent=True) or {}
     task_prompt = data.get("task_prompt")
     result = _execute_bot_task(bot_id, task_prompt=task_prompt)
@@ -218,7 +218,7 @@ def run_bot(bot_id):
 def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
     """Shared bot-execution logic used by both the /run route and the scheduler."""
     bots_repo.load()
-    personalities_repo.load()
+    skills_repo.load()
     bot = bots_repo.get(bot_id)
     if not bot:
         return {"error": "Bot not found"}
@@ -229,8 +229,8 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
 
     started_at = _iso()
 
-    personality = personalities_repo.get(bot.personality_id) if bot.personality_id else None
-    system_prompt = personality.system_prompt if personality else ""
+    skill = skills_repo.get(bot.skill_id) if bot.skill_id else None
+    system_prompt = skill.system_prompt if skill else ""
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(bot.conversation_history[-20:])
@@ -251,42 +251,42 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         except Exception as e:  # noqa: BLE001
             return {"error": str(e)}
 
-    # Determine agent based on personality_id
+    # Determine skill based on skill_id
     agent_cls = None
     system_prompt = ""
     
-    if bot.personality_id == "demo":
-        # Use Demo System Agent from demo.py
-        from Agents.registry import agent_registry
-        agent_cls = agent_registry.get_agent("Demo System Agent")
+    if bot.skill_id == "demo":
+        # Use Demo System Skill from demo.py
+        from Skills.registry import skill_registry
+        agent_cls = skill_registry.get_skill("Demo System Skill")
         if agent_cls:
             system_prompt = agent_cls().system_prompt
-    elif bot.personality_id == "general":
-        # Use General/Agent base class
-        from Agents.app import AgentBase
-        system_prompt = AgentBase.system_prompt
+    elif bot.skill_id == "general":
+        # Use General/Skill base class
+        from Skills.app import SkillBase
+        system_prompt = SkillBase.system_prompt
     else:
-        # A personality id may correspond to a discovered agent name rather than
-        # a saved personality. Resolve agents first so bot creators can pick an
-        # agent (e.g. "Burgundy Weather Agent") directly from the New-Bot form.
-        from Agents.registry import agent_registry
+        # A skill id may correspond to a discovered skill name rather than
+        # a saved skill. Resolve skills first so bot creators can pick an
+        # skill (e.g. "Burgundy Weather Skill") directly from the New-Bot form.
+        from Skills.registry import skill_registry
 
-        agent_cls = agent_registry.get_agent(bot.personality_id)
+        agent_cls = skill_registry.get_skill(bot.skill_id)
         if agent_cls:
             system_prompt = agent_cls().system_prompt
         else:
-            personality = (
-                personalities_repo.get(bot.personality_id)
-                if bot.personality_id
+            skill = (
+                skills_repo.get(bot.skill_id)
+                if bot.skill_id
                 else None
             )
-            if personality:
-                system_prompt = personality.system_prompt
+            if skill:
+                system_prompt = skill.system_prompt
 
     result_text = ""
     if agent_cls:
-        agent = agent_cls()
-        agent_result = agent.execute(
+        skill = agent_cls()
+        agent_result = skill.execute(
             task_prompt,
             conversation_history=bot.conversation_history[-20:],
             knowledge_path=bot.knowledge_base_path,

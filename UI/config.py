@@ -16,12 +16,11 @@ SERVER_DIR = SERVICE_DIR.parent.parent
 INSTANCES_DIR = Path(os.getenv("UI_INSTANCES_DIR", str(SERVICE_DIR / "instances")))
 BOTS_DIR = INSTANCES_DIR / "bots"
 KNOWLEDGE_DIR = INSTANCES_DIR / "knowledge"
-PERSONALITIES_DIR = INSTANCES_DIR / "personalities"
+SKILLS_DIR = SERVICE_DIR.parent / "Skills"
 MCPS_DIR = INSTANCES_DIR / "mcps"
 SETTINGS_FILE = INSTANCES_DIR / "settings.json"
-AGENTS_DIR = SERVER_DIR / "Agents"
 
-for _d in (INSTANCES_DIR, BOTS_DIR, KNOWLEDGE_DIR, PERSONALITIES_DIR, MCPS_DIR):
+for _d in (INSTANCES_DIR, BOTS_DIR, KNOWLEDGE_DIR, SKILLS_DIR, MCPS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 # ══════════════════════════════════════════════════════════════════
@@ -73,9 +72,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
         "tick_seconds": 30,
     },
     "mcp_service_url": MCP_SERVICE_URL,
-    "agents": {
+    "skills": {
         "enabled": True,
-        "git_url": "",  # optional git repo URL cloned into Agents/remote/<name>; empty => local /Agents only
+        "git_url": "",  # optional git repo URL cloned into Skills/remote/<name>; empty => local /Skills only
     },
 }
 

@@ -62,7 +62,7 @@
                 </div>
                 <div class="form-group">
                     <label>Skill</label>
-                    <select id="newBotPersonality">
+                    <select id="newBotSkill">
                         <option value="">(none)</option>
                     </select>
                 </div>
@@ -107,7 +107,7 @@
                 </div>
                 <div class="form-group">
                     <label>Skill</label>
-                    <select id="editBotPersonality">
+                    <select id="editBotSkill">
                         <option value="">(none)</option>
                     </select>
                 </div>
@@ -138,32 +138,32 @@
     </div>
 
     <!-- SKILL MODAL -->
-    <div id="personalityModal" class="modal">
+    <div id="skillModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Skill</h3>
                 <span class="close-modal">&times;</span>
             </div>
-            <form id="personalityForm">
+            <form id="skillForm">
                 <div class="form-group">
                     <label>Name</label>
-                    <input type="text" id="personalityName" required>
+                    <input type="text" id="skillName" required>
                 </div>
                 <div class="form-group">
                     <label>Description</label>
-                    <textarea id="personalityDescription"></textarea>
+                    <textarea id="skillDescription"></textarea>
                 </div>
                 <div class="form-group">
                     <label>Skills</label>
-                    <input type="text" id="personalitySkills">
+                    <input type="text" id="skillSkills">
                 </div>
                 <div class="form-group">
                     <label>Abilities</label>
-                    <input type="text" id="personalityAbilities">
+                    <input type="text" id="skillAbilities">
                 </div>
                 <div class="form-group">
                     <label>System Prompt</label>
-                    <textarea id="personalitySystemPrompt"></textarea>
+                    <textarea id="skillSystemPrompt"></textarea>
                 </div>
                 <button type="submit" class="btn-save">Save Skill</button>
             </form>
@@ -199,7 +199,7 @@
             <div class="tab-nav">
                 <button class="tab-btn active" data-tab="llm">LLM Provider</button>
                 <button class="tab-btn" data-tab="mcp">MCP Marketplace</button>
-                <button class="tab-btn" data-tab="personalities">Skills</button>
+                <button class="tab-btn" data-tab="skills">Skills</button>
             </div>
 
             <!-- Tab Contents -->
@@ -317,18 +317,18 @@
                 </div>
             </div>
 
-            <div class="tab-content" id="tab-personalities">
+            <div class="tab-content" id="tab-skills">
                 <div class="form-group">
                     <label>Remote Skills Repo (git URL)</label>
                     <div class="form-row">
-                        <input type="text" id="settingsAgentsGitUrl" placeholder="https://github.com/you/my-skills.git">
-                        <button type="button" class="btn-secondary" id="agentsSyncBtn">Sync Skills</button>
+                        <input type="text" id="settingsSkillsGitUrl" placeholder="https://github.com/you/my-skills.git">
+                        <button type="button" class="btn-secondary" id="skillsSyncBtn">Sync Skills</button>
                     </div>
-                    <div id="agentsSyncStatus" class="llm-status"></div>
+                    <div id="skillsSyncStatus" class="llm-status"></div>
                 </div>
                 <div class="form-group">
                     <label>Skills</label>
-                    <div id="personalityList" class="personality-list"></div>
+                    <div id="skillList" class="skill-list"></div>
                 </div>
                 <div class="form-group">
                     <label>Top Skills</label>

@@ -16,10 +16,12 @@ deep rebrand below.
 - `UI/routes/personalities.py` + `UI/routes/agents.py` merge into ONE
   `UI/routes/skills.py` (both would otherwise be `skills.py`).
 - MD format (SKILL.md-style, no new dependency): frontmatter
-  `name`/`description`/`model` + system-prompt body + `## Skills` /
-  `## Abilities` bullet lists + `## Guardrails` / `## Tools` as ```json
-  fences. One file per skill: `Skills/<id>.md`. Parser/writer:
-  `UI/skill_md.py` (dependency-free frontmatter parser).
+  `name`/`description` + system-prompt body + `## Skills` /
+  `## Abilities` bullet lists. One file per skill: `Skills/<id>.md`.
+  Parser/writer: `UI/skill_md.py` (dependency-free frontmatter parser).
+  V1 stores only those fields; `## Guardrails` / `## Tools` sections in
+  a file are ignored on read (reserved for a later format version).
+  Plugin modules (`Skills/local/*.py`) carry their own model in code.
 - Skill store: a directory of `.md` files (replaces single
   `personalities.json`). First load migrates a legacy `personalities.json`
   if present: writes `.md` files, renames the JSON to `.bak`. This is the
@@ -53,8 +55,8 @@ deep rebrand below.
   `* Skill` (e.g. `Burgundy (Weather Skill)`).
 - `list_agents`/`get_agent` → `list_skills`/`get_skill`;
   `REMOTE_DIR`/`LOCAL_DIR` → `Skills/remote`, `Skills/local`.
-- Routes: `/api/skills/*` (list, CRUD, active, toggle, import-git,
-  available, sources, refresh, leaderboard). Response keys `skills`,
+- Routes: `/api/skills/*` (list, CRUD, discovered, active, toggle,
+  import-git, available, sources, refresh, leaderboard). Response keys `skills`,
   `skills_imported`. Item `type`: `skill` (with `source`: `saved` /
   `discovered`).
 - Settings key `agents` → `skills`; env prefix `AGENT_` → `SKILL_`.

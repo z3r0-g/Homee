@@ -23,11 +23,11 @@ const botList = document.getElementById('botList');
 const chatArea = document.getElementById('chatArea');
 const newBotBtn = document.getElementById('newBotBtn');
 const settingsBtn = document.getElementById('settingsBtn');
-const personalityModal = document.getElementById('personalityModal');
+const skillModal = document.getElementById('skillModal');
 const settingsModal = document.getElementById('settingsModal');
 const newBotModal = document.getElementById('newBotModal');
 const closeModalBtns = document.querySelectorAll('.close-modal');
-const personalityForm = document.getElementById('personalityForm');
+const skillForm = document.getElementById('skillForm');
 const newBotForm = document.getElementById('newBotForm');
 const settingsForm = document.getElementById('settingsForm');
 const tabBtns = document.querySelectorAll('.tab-btn');
@@ -38,11 +38,11 @@ const settings_llmMode = document.querySelector('input[name="llmMode"]');
 // Initialize
 async function init() {
     await loadBots();
-    await loadPersonalitiesForNewBot();
+    await loadSkillsForNewBot();
     await loadSettings();
     setupTabNavigation();
     renderModeSelector();
-    await initMCPAndPersonalities();
+    await initMCPAndSkills();
 }
 
 // Load bots from API
@@ -93,12 +93,12 @@ function setBotBusy(botId, busy) {
     if (statusEl) statusEl.textContent = botBusy[botId] ? 'working' : (bot ? bot.status : 'idle');
 }
 
-// Personality label for the bot-info bar: prefer the saved-personality
-// name from the new-bot dropdown; agent-direct ids (short names) show
+// Skill label for the bot-info bar: prefer the saved-skill
+// name from the new-bot dropdown; skill-direct ids (short names) show
 // in full, long uuid-like ids fall back to the old 8-char prefix.
-function resolvePersonalityName(personalityId) {
+function resolveSkillName(personalityId) {
     if (!personalityId) return 'none';
-    const select = document.getElementById('newBotPersonality');
+    const select = document.getElementById('newBotSkill');
     if (select) {
         const opt = [...select.options].find(o => o.value === personalityId);
         if (opt && opt.text !== '(none)') return opt.text;
@@ -221,31 +221,31 @@ async function settleSend(botId, thinkingDiv, input, timer) {
     await loadBots();
 }
 
-// Load personalities for the new-bot dropdown
-async function loadPersonalitiesForNewBot() {
+// Load skills for the new-bot dropdown
+async function loadSkillsForNewBot() {
     try {
-        const response = await fetch(`${API_BASE}/api/agents/available-personalities`);
+        const response = await fetch(`${API_BASE}/api/skills/available`);
         if (!response.ok) {
             throw new Error('Server responded with ' + response.status);
         }
         const data = await response.json();
-        const select = document.getElementById('newBotPersonality');
+        const select = document.getElementById('newBotSkill');
         if (select) {
             select.innerHTML = '<option value="">(none)</option>' +
-                (data.personalities || []).map(p =>
+                (data.skills || []).map(p =>
                     `<option value="${p.id}">${p.name}</option>`
                 ).join('');
-            const editSelect = document.getElementById('editBotPersonality');
+            const editSelect = document.getElementById('editBotSkill');
             if (editSelect) editSelect.innerHTML = select.innerHTML;
         }
     } catch (e) {
-        console.warn('Failed to load available personalities', e);
-        const select = document.getElementById('newBotPersonality');
+        console.warn('Failed to load available skills', e);
+        const select = document.getElementById('newBotSkill');
         if (select) {
             select.innerHTML = '<option value="">(none)</option>' +
                 '<option value="demo">Demo Mode</option>' +
                 '<option value="general">General</option>';
-            const editSelect = document.getElementById('editBotPersonality');
+            const editSelect = document.getElementById('editBotSkill');
             if (editSelect) editSelect.innerHTML = select.innerHTML;
         }
     }
@@ -368,7 +368,7 @@ async function openBotChat(botId) {
     const barActions = cfg.enabled
         ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>`
         : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`;
-    infoDiv.innerHTML = `<span class="bot-meta">Skill: ${escapeHtml(resolvePersonalityName(bot.personality_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
+    infoDiv.innerHTML = `<span class="bot-meta">Skill: ${escapeHtml(resolveSkillName(bot.skill_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
@@ -558,8 +558,8 @@ async function loadSettings() {
         document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
         document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
         document.getElementById('settingsRemoteModel').value = settings.llm?.remote_model || 'gpt-4o-mini';
-        const gitUrlInput = document.getElementById('settingsAgentsGitUrl');
-        if (gitUrlInput) gitUrlInput.value = settings.agents?.git_url || '';
+        const gitUrlInput = document.getElementById('settingsSkillsGitUrl');
+        if (gitUrlInput) gitUrlInput.value = settings.skills?.git_url || '';
         document.getElementById('settingsSchedulerEnabled').checked = settings.scheduler?.enabled !== false;
         document.getElementById('settingsSchedulerTick').value = settings.scheduler?.tick_seconds || 30;
     } catch (e) {
@@ -637,7 +637,7 @@ if (newBotForm) {
         const scheduleType = document.getElementById('newBotSchedule').value;
         const botData = {
             name: document.getElementById('newBotName').value,
-            personality_id: document.getElementById('newBotPersonality').value || '',
+            skill_id: document.getElementById('newBotSkill').value || '',
             task_prompt: document.getElementById('newBotTaskPrompt').value,
             schedule_type: scheduleType,
             interval_seconds: scheduleType === 'interval' ? parseInt(document.getElementById('newBotInterval').value) || 3600 : 0,
@@ -649,7 +649,7 @@ if (newBotForm) {
             body: JSON.stringify(botData)
         });
         await loadBots();
-        await loadPersonalitiesForNewBot();
+        await loadSkillsForNewBot();
         closeModal(newBotModal);
     });
 }
@@ -659,10 +659,10 @@ async function openEditBot(botId) {
         const response = await fetch(`${API_BASE}/api/bots/${botId}`);
         if (!response.ok) return;
         const bot = await response.json();
-        await loadPersonalitiesForNewBot();
+        await loadSkillsForNewBot();
         document.getElementById('editBotId').value = bot.id;
         document.getElementById('editBotName').value = bot.name || '';
-        document.getElementById('editBotPersonality').value = bot.personality_id || '';
+        document.getElementById('editBotSkill').value = bot.skill_id || '';
         document.getElementById('editBotTaskPrompt').value = (bot.config && bot.config.task_prompt) || '';
         const schedule = (bot.config && bot.config.schedule_type) || 'none';
         document.getElementById('editBotSchedule').value = schedule;
@@ -689,7 +689,7 @@ if (editBotForm) {
         const scheduleType = document.getElementById('editBotSchedule').value;
         const payload = {
             name: document.getElementById('editBotName').value,
-            personality_id: document.getElementById('editBotPersonality').value || '',
+            skill_id: document.getElementById('editBotSkill').value || '',
             task_prompt: document.getElementById('editBotTaskPrompt').value,
             schedule_type: scheduleType,
             interval_seconds: scheduleType === 'interval' ? parseInt(document.getElementById('editBotInterval').value) || 3600 : 0,
@@ -721,23 +721,23 @@ if (editBotScheduleEl) {
     editBotScheduleEl.addEventListener('change', (e) => toggleEditScheduleGroups(e.target.value));
 }
 
-if (personalityForm) {
-    personalityForm.addEventListener('submit', async (e) => {
+if (skillForm) {
+    skillForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const personality = {
-            name: document.getElementById('personalityName').value,
-            description: document.getElementById('personalityDescription').value,
-            skills: document.getElementById('personalitySkills').value.split(',').map(s => s.trim()).filter(s => s),
-            abilities: document.getElementById('personalityAbilities').value.split(',').map(a => a.trim()).filter(a => a),
-            system_prompt: document.getElementById('personalitySystemPrompt').value
+        const skill = {
+            name: document.getElementById('skillName').value,
+            description: document.getElementById('skillDescription').value,
+            skills: document.getElementById('skillSkills').value.split(',').map(s => s.trim()).filter(s => s),
+            abilities: document.getElementById('skillAbilities').value.split(',').map(a => a.trim()).filter(a => a),
+            system_prompt: document.getElementById('skillSystemPrompt').value
         };
-        await fetch(`${API_BASE}/api/personalities`, {
+        await fetch(`${API_BASE}/api/skills`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(personality)
+            body: JSON.stringify(skill)
         });
-        await loadPersonalitiesForNewBot();
-        closeModal(personalityModal);
+        await loadSkillsForNewBot();
+        closeModal(skillModal);
     });
 }
 
@@ -1664,34 +1664,34 @@ async function renderLeaderboardSkills() {
 }
 
 // ── Skills: local skills on by default, disableable ──────
-// The old render used agent.id / agent.status, which /api/agents/active
+// The old render used skill.id / skill.status, which /api/skills/active
 // never returned — hence the literal "undefined" in every card — and its
 // inline onclick handlers were unclosed calls, so the buttons did nothing.
-async function renderAgentPersonalities() {
-    const list = document.getElementById('personalityList');
+async function renderSkills() {
+    const list = document.getElementById('skillList');
     if (!list) return;
     try {
         const [agentsRes, envRes] = await Promise.all([
-            fetch(`${API_BASE}/api/agents/active`),
-            fetch(`${API_BASE}/api/env/vars?prefix=AGENT_`),
+            fetch(`${API_BASE}/api/skills/active`),
+            fetch(`${API_BASE}/api/env/vars?prefix=SKILL_`),
         ]);
-        const agents = (await agentsRes.json()).agents || [];
-        const agentVars = ((await envRes.json()).vars) || {};
+        const skills = (await agentsRes.json()).skills || [];
+        const skillVars = ((await envRes.json()).vars) || {};
         let html = '';
-        if (agents.length > 0) {
-            html += '<h4>Active Skills</h4><div class="agent-item">';
-            agents.forEach(agent => {
+        if (skills.length > 0) {
+            html += '<h4>Active Skills</h4><div class="skill-item">';
+            skills.forEach(skill => {
                 html += `
-                    <div class="agent-card" data-agent-id="${escapeHtml(agent.id)}">
-                        <div class="agent-header">
-                            <span class="agent-name">${escapeHtml(agent.name)}</span>
-                            <span class="mcp-badge ${agent.source === 'remote' ? 'mcp-badge-remote' : 'mcp-badge-local'}">${agent.source === 'remote' ? 'Remote' : 'Local'}</span>
-                            <span class="agent-status ${agent.active ? 'status-active' : 'status-inactive'}">${agent.active ? 'Active' : 'Disabled'}</span>
+                    <div class="skill-card" data-skill-id="${escapeHtml(skill.id)}">
+                        <div class="skill-header">
+                            <span class="skill-name">${escapeHtml(skill.name)}</span>
+                            <span class="mcp-badge ${skill.source === 'remote' ? 'mcp-badge-remote' : 'mcp-badge-local'}">${skill.source === 'remote' ? 'Remote' : 'Local'}</span>
+                            <span class="skill-status ${skill.active ? 'status-active' : 'status-inactive'}">${skill.active ? 'Active' : 'Disabled'}</span>
                         </div>
-                        <div class="agent-description">${escapeHtml(agent.description || '')}</div>
-                        <div class="agent-controls">
-                            <button class="btn-icon" data-agent-action="toggle" data-agent-id="${escapeHtml(agent.id)}" title="${agent.active ? 'Disable' : 'Enable'}" aria-label="${agent.active ? 'Disable skill' : 'Enable skill'}">${agent.active ? '&#10006;' : '&#10003;'}</button>
-                            <button class="btn-icon" data-agent-action="import-git" data-agent-id="${escapeHtml(agent.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
+                        <div class="skill-description">${escapeHtml(skill.description || '')}</div>
+                        <div class="skill-controls">
+                            <button class="btn-icon" data-skill-action="toggle" data-skill-id="${escapeHtml(skill.id)}" title="${skill.active ? 'Disable' : 'Enable'}" aria-label="${skill.active ? 'Disable skill' : 'Enable skill'}">${skill.active ? '&#10006;' : '&#10003;'}</button>
+                            <button class="btn-icon" data-skill-action="import-git" data-skill-id="${escapeHtml(skill.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
                         </div>
                     </div>`;
             });
@@ -1699,80 +1699,80 @@ async function renderAgentPersonalities() {
         } else {
             html += '<p style="color: var(--color-muted);">No skills discovered.</p>';
         }
-        if (Object.keys(agentVars).length > 0) {
-            html += '<h4>Skills from Environment</h4><div class="personality-item">';
-            Object.entries(agentVars).forEach(([key, value]) => {
-                const name = key.replace('AGENT_', '').replace(/_/g, ' ');
+        if (Object.keys(skillVars).length > 0) {
+            html += '<h4>Skills from Environment</h4><div class="skill-item">';
+            Object.entries(skillVars).forEach(([key, value]) => {
+                const name = key.replace('SKILL_', '').replace(/_/g, ' ');
                 html += `
-                    <div class="personality-card" data-personality-key="${escapeHtml(key)}">
-                        <span class="personality-name">${escapeHtml(name)}</span>
-                        <span class="personality-value">${escapeHtml(value.substring(0, 50))}${value.length > 50 ? '...' : ''}</span>
+                    <div class="skill-card" data-skill-key="${escapeHtml(key)}">
+                        <span class="skill-name">${escapeHtml(name)}</span>
+                        <span class="skill-value">${escapeHtml(value.substring(0, 50))}${value.length > 50 ? '...' : ''}</span>
                         <button class="btn-secondary small" data-env-action="disable" data-env-key="${escapeHtml(key)}">Disable</button>
                     </div>`;
             });
             html += '</div>';
         }
         list.innerHTML = html;
-        list.querySelectorAll('[data-agent-action]').forEach(btn => btn.addEventListener('click', async () => {
-            const action = btn.dataset.agentAction;
-            const id = btn.dataset.agentId;
+        list.querySelectorAll('[data-skill-action]').forEach(btn => btn.addEventListener('click', async () => {
+            const action = btn.dataset.skillAction;
+            const id = btn.dataset.skillId;
             if (action === 'toggle') {
-                await fetch(`${API_BASE}/api/agents/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
-                await renderAgentPersonalities();
+                await fetch(`${API_BASE}/api/skills/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
+                await renderSkills();
             } else if (action === 'import-git') {
-                if (!confirm('Import agent configuration from remote git source?')) return;
-                const response = await fetch(`${API_BASE}/api/agents/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
+                if (!confirm('Import skill configuration from remote git source?')) return;
+                const response = await fetch(`${API_BASE}/api/skills/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
                 const result = await response.json();
-                const syncStatus = document.getElementById('agentsSyncStatus');
+                const syncStatus = document.getElementById('skillsSyncStatus');
                 if (result.success) {
                     if (syncStatus) syncStatus.textContent = 'Skill imported from Git.';
-                    await renderAgentPersonalities();
+                    await renderSkills();
                 } else if (syncStatus) {
                     syncStatus.textContent = 'Failed to import from Git: ' + (result.error || '');
                 }
             }
         }));
         list.querySelectorAll('[data-env-action="disable"]').forEach(btn => btn.addEventListener('click', async () => {
-            if (!confirm('Disable this agent personality?')) return;
+            if (!confirm('Disable this skill skill?')) return;
             try {
                 const response = await fetch(`${API_BASE}/api/env/disable/${encodeURIComponent(btn.dataset.envKey)}`, { method: 'POST' });
                 const result = await response.json();
-                if (result.success) await renderAgentPersonalities();
+                if (result.success) await renderSkills();
             } catch (e) {
-                console.warn('Failed to disable agent personality', e);
+                console.warn('Failed to disable skill skill', e);
             }
         }));
     } catch (e) {
-        console.warn('Failed to load agent personalities', e);
-        list.innerHTML = '<p style="color: var(--color-muted);">Failed to load agent personalities.</p>';
+        console.warn('Failed to load skill skills', e);
+        list.innerHTML = '<p style="color: var(--color-muted);">Failed to load skill skills.</p>';
     }
 }
 
-// Remote git repo for agents: save the URL, then re-discover (clone/pull).
-const agentsSyncBtn = document.getElementById('agentsSyncBtn');
-if (agentsSyncBtn) agentsSyncBtn.addEventListener('click', async () => {
-    const input = document.getElementById('settingsAgentsGitUrl');
-    const statusEl = document.getElementById('agentsSyncStatus');
+// Remote git repo for skills: save the URL, then re-discover (clone/pull).
+const skillsSyncBtn = document.getElementById('skillsSyncBtn');
+if (skillsSyncBtn) skillsSyncBtn.addEventListener('click', async () => {
+    const input = document.getElementById('settingsSkillsGitUrl');
+    const statusEl = document.getElementById('skillsSyncStatus');
     const gitUrl = input ? input.value.trim() : '';
     if (statusEl) statusEl.textContent = 'Saving repo and syncing…';
     try {
         await fetch(`${API_BASE}/api/settings`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agents: { git_url: gitUrl } })
+            body: JSON.stringify({ skills: { git_url: gitUrl } })
         });
-        const response = await fetch(`${API_BASE}/api/agents/refresh`, { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/skills/refresh`, { method: 'POST' });
         const data = await response.json();
-        if (statusEl) statusEl.textContent = `Synced — ${(data.agents || []).length} skill(s) discovered.`;
-        await renderAgentPersonalities();
+        if (statusEl) statusEl.textContent = `Synced — ${(data.skills || []).length} skill(s) discovered.`;
+        await renderSkills();
     } catch (e) {
         if (statusEl) statusEl.textContent = `Sync failed: ${e.message}`;
     }
 });
 
 // Initialize MCP and Skills
-async function initMCPAndPersonalities() {
+async function initMCPAndSkills() {
     await loadMcps();
-    await renderAgentPersonalities();
+    await renderSkills();
     await renderLeaderboardSkills();
 }

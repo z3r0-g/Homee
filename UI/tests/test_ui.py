@@ -21,22 +21,22 @@ def test_settings_defaults(client):
     assert "llm" in data
     assert "scheduler" in data
     assert "mcp_service_url" in data
-    assert "agents" in data
-    assert data["agents"]["enabled"] is True
-    assert data["agents"]["git_url"] == ""
+    assert "skills" in data
+    assert data["skills"]["enabled"] is True
+    assert data["skills"]["git_url"] == ""
 
 
 def test_settings_post_agents_git_url(client):
     resp = client.post(
         "/api/settings",
-        json={"agents": {"git_url": "https://example.com/org/agents.git", "enabled": True}},
+        json={"skills": {"git_url": "https://example.com/org/skills.git", "enabled": True}},
     )
     assert resp.status_code == 200
     assert resp.get_json()["success"] is True
-    assert resp.get_json()["settings"]["agents"]["git_url"] == "https://example.com/org/agents.git"
+    assert resp.get_json()["settings"]["skills"]["git_url"] == "https://example.com/org/skills.git"
     # persisted to disk and reloaded
     resp = client.get("/api/settings")
-    assert resp.get_json()["agents"]["git_url"] == "https://example.com/org/agents.git"
+    assert resp.get_json()["skills"]["git_url"] == "https://example.com/org/skills.git"
 
 
 def test_list_bots_empty(client):
@@ -58,37 +58,37 @@ def test_create_and_get_bot(client):
     assert resp.get_json()["name"] == "Test Bot"
 
 
-def test_list_personalities_empty(client):
-    resp = client.get("/api/personalities")
+def test_list_skills_empty(client):
+    resp = client.get("/api/skills")
     assert resp.status_code == 200
-    assert resp.get_json()["personalities"] == []
+    assert resp.get_json()["skills"] == []
 
 
-def test_create_personality(client):
+def test_create_skill(client):
     resp = client.post(
-        "/api/personalities",
+        "/api/skills",
         json={"name": "Helper", "system_prompt": "You are helpful."},
     )
     assert resp.status_code == 201
-    pid = resp.get_json()["personality"]["id"]
-    resp = client.get(f"/api/personalities/{pid}")
+    pid = resp.get_json()["skill"]["id"]
+    resp = client.get(f"/api/skills/{pid}")
     assert resp.status_code == 200
 
 
-def test_list_agents(client):
-    resp = client.get("/api/agents")
+def test_list_skills(client):
+    resp = client.get("/api/skills/discovered")
     assert resp.status_code == 200
-    agents = resp.get_json()["agents"]
-    names = {a["name"] for a in agents}
-    assert "Demo (System Agent)" in names
+    skills = resp.get_json()["skills"]
+    names = {a["name"] for a in skills}
+    assert "Demo (System Skill)" in names
 
 
-def test_agents_refresh(client):
-    resp = client.post("/api/agents/refresh")
+def test_skills_refresh(client):
+    resp = client.post("/api/skills/refresh")
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["success"] is True
-    assert isinstance(body["agents"], list)
+    assert isinstance(body["skills"], list)
 
 # ── LLM status / pull endpoints (ollama-first) ─────────────────────────
 
@@ -176,10 +176,10 @@ def test_settings_save_preserves_mode_and_git_url(client):
     assert resp.status_code == 200
     resp = client.post("/api/settings", json={
         "llm": {"local_model": "qwen2.5:7b"},
-        "agents": {"git_url": "https://example.com/org/agents.git"},
+        "skills": {"git_url": "https://example.com/org/skills.git"},
     })
     assert resp.status_code == 200
-    # Second save without mode / agents: both must survive (the old code
+    # Second save without mode / skills: both must survive (the old code
     # merged over defaults and reset them).
     resp = client.post("/api/settings", json={
         "llm": {"local_model": "qwen2.5:7b"},
@@ -187,7 +187,7 @@ def test_settings_save_preserves_mode_and_git_url(client):
     assert resp.status_code == 200
     data = client.get("/api/settings").get_json()
     assert data["llm"]["mode"] == "local_cloud"
-    assert data["agents"]["git_url"] == "https://example.com/org/agents.git"
+    assert data["skills"]["git_url"] == "https://example.com/org/skills.git"
 
 
 def test_modes_rejects_unknown_mode(client):
@@ -195,7 +195,7 @@ def test_modes_rejects_unknown_mode(client):
     assert resp.status_code == 400
 
 
-# ── Settings redesign: catalog, model delete, MCP, agents ────────────
+# ── Settings redesign: catalog, model delete, MCP, skills ────────────
 
 def test_llm_catalog_shape(client):
     resp = client.get("/api/llm/catalog")
@@ -307,46 +307,48 @@ def test_mcp_disable_proxies_put(client, monkeypatch):
     assert seen["method"] == "PUT" and seen["body"] == {"enabled": False}
 
 
-def test_agents_active_has_id_and_active(client):
-    resp = client.get("/api/agents/active")
+def test_skills_active_has_id_and_active(client):
+    resp = client.get("/api/skills/active")
     assert resp.status_code == 200
-    agents = resp.get_json()["agents"]
-    assert agents, "expected the real local agents to be discovered"
-    for agent in agents:
-        assert agent["id"] == agent["name"]
-        assert agent["active"] is True  # local agents on by default
-        assert agent["source"] == "local"
+    skills = resp.get_json()["skills"]
+    assert skills, "expected the real local skills to be discovered"
+    for skill in skills:
+        assert skill["id"] == skill["name"]
+        assert skill["active"] is True  # local skills on by default
+        assert skill["source"] == "local"
 
 
-def test_agents_toggle_disables_then_reenables(client):
+def test_skills_toggle_disables_then_reenables(client):
     from urllib.parse import quote
-    name = client.get("/api/agents/active").get_json()["agents"][0]["name"]
-    resp = client.post(f"/api/agents/toggle/{quote(name, safe='')}")
+    name = client.get("/api/skills/active").get_json()["skills"][0]["name"]
+    resp = client.post(f"/api/skills/toggle/{quote(name, safe='')}")
     assert resp.status_code == 200
     assert resp.get_json()["active"] is False  # first toggle disables
-    agents = client.get("/api/agents/active").get_json()["agents"]
-    assert [a for a in agents if a["name"] == name][0]["active"] is False
-    resp = client.post(f"/api/agents/toggle/{quote(name, safe='')}")
+    skills = client.get("/api/skills/active").get_json()["skills"]
+    assert [a for a in skills if a["name"] == name][0]["active"] is False
+    resp = client.post(f"/api/skills/toggle/{quote(name, safe='')}")
     assert resp.get_json()["active"] is True
 
 
-def test_agents_refresh_imports_remote_personality_json(client, tmp_path, monkeypatch):
-    import json
-    import Agents.registry as registry
+def test_skills_refresh_imports_remote_personality_json(client, tmp_path, monkeypatch):
+    import Skills.registry as registry
     remote_root = tmp_path / "remote"
-    repo = remote_root / "my-agents"
+    repo = remote_root / "my-skills"
     repo.mkdir(parents=True)
-    (repo / "librarian.json").write_text(json.dumps({
-        "name": "Librarian",
-        "description": "Precise answers.",
-        "system_prompt": "You are a careful librarian.",
-    }))
+    (repo / "librarian.md").write_text(
+        "---\n"
+        "name: Librarian\n"
+        "description: Precise answers.\n"
+        "---\n"
+        "\n"
+        "You are a careful librarian.\n"
+    )
     monkeypatch.setattr(registry, "REMOTE_DIR", remote_root)
-    resp = client.post("/api/agents/refresh")
+    resp = client.post("/api/skills/refresh")
     assert resp.status_code == 200
-    assert resp.get_json()["personalities_imported"] == 1
-    data = client.get("/api/personalities").get_json()
-    names = [p["name"] for p in data["personalities"]]
+    assert resp.get_json()["skills_imported"] == 1
+    data = client.get("/api/skills").get_json()
+    names = [p["name"] for p in data["skills"]]
     assert "Librarian" in names
 
 
@@ -370,7 +372,7 @@ def test_update_bot_via_put(client):
     bot_id = resp.get_json()["bot"]["id"]
     resp = client.put(f"/api/bots/{bot_id}", json={
         "name": "Edited Bot",
-        "personality_id": "general",
+        "skill_id": "general",
         "task_prompt": "summarize",
         "schedule_type": "interval",
         "interval_seconds": 600,
@@ -379,7 +381,7 @@ def test_update_bot_via_put(client):
     assert resp.status_code == 200
     data = resp.get_json()["bot"]
     assert data["name"] == "Edited Bot"
-    assert data["personality_id"] == "general"
+    assert data["skill_id"] == "general"
     assert data["config"]["task_prompt"] == "summarize"
     assert data["config"]["schedule_type"] == "interval"
     assert data["config"]["interval_seconds"] == 600

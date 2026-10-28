@@ -15,18 +15,17 @@ import os
 from flask import Flask
 
 from .config import HOST, PORT, DEBUG, load_settings
-from .models import bots_repo, personalities_repo, mcps_repo
+from .models import bots_repo, skills_repo, mcps_repo
 from .scheduler import BotScheduler
 from .routes import (
     bots_bp,
-    personalities_bp,
+    skills_bp,
     mcps_bp,
     knowledge_bp,
     settings_bp,
-    agents_bp,
 )
 
-from Agents.registry import agent_registry
+from Skills.registry import skill_registry
 
 
 # Module-level scheduler so it stays alive for the app's lifetime
@@ -38,16 +37,15 @@ def create_ui_app() -> Flask:
 
     # Load persisted state
     bots_repo.load()
-    personalities_repo.load()
+    skills_repo.load()
     mcps_repo.load()
 
     # Register blueprints
     app.register_blueprint(bots_bp)
-    app.register_blueprint(personalities_bp)
+    app.register_blueprint(skills_bp)
     app.register_blueprint(mcps_bp)
     app.register_blueprint(knowledge_bp)
     app.register_blueprint(settings_bp)
-    app.register_blueprint(agents_bp)
 
     # Cache-bust static assets: the browser otherwise holds app.js/app.css
     # for Flask's 12h static max-age across pulls, so a pulled fix can
@@ -76,13 +74,13 @@ def create_ui_app() -> Flask:
         from flask import render_template
         return render_template("app.html")
 
-    # Configure the independent Agents package from UI settings.
-    # A git URL (if set) is cloned into Agents/remote/<name>; when unset the
-    # local /Agents directory on the Server is used.
+    # Configure the independent Skills package from UI settings.
+    # A git URL (if set) is cloned into Skills/remote/<name>; when unset the
+    # local /Skills directory on the Server is used.
     settings = load_settings()
-    agents_cfg = settings.get("agents", {}) if isinstance(settings, dict) else {}
-    agent_registry.configure_git_url(agents_cfg.get("git_url") or None)
-    agent_registry.discover(force=True)
+    agents_cfg = settings.get("skills", {}) if isinstance(settings, dict) else {}
+    skill_registry.configure_git_url(agents_cfg.get("git_url") or None)
+    skill_registry.discover(force=True)
 
     # Start the background scheduler (disabled under tests via UI_START_SCHEDULER=false)
     if os.getenv("UI_START_SCHEDULER", "true").lower() != "false":

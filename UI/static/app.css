@@ -790,7 +790,7 @@ button,
     opacity: 0.7;
 }
 
-.personality-card {
+.skill-card {
     border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 12px;
@@ -799,17 +799,17 @@ button,
     transition: background-color 0.2s;
 }
 
-.personality-card:hover {
+.skill-card:hover {
     background-color: var(--color-hover);
 }
 
-.personality-item {
+.skill-item {
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--color-border);
 }
 
-.agent-item {
+.skill-item {
     margin-top: 12px;
     padding-top: 12px;
     border-top: 1px solid var(--color-border);
@@ -821,8 +821,8 @@ button,
 .mode-switch-local_cloud { border-left: 3px solid var(--color-primary); }
 .mode-switch-local_remote_local { border-left: 3px solid var(--color-warning); }
 
-/* Agent personalities tab (container was unstyled). */
-.personality-list {
+/* Skills tab (container was unstyled). */
+.skill-list {
     display: grid;
     gap: 12px;
 }

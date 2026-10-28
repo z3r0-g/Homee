@@ -44,21 +44,21 @@ Five features, done the simple way:
 - `UI/__init__.py` — empty package marker
 - `UI/app.py` — `create_ui_app()` Flask app factory + module-level `app` for WSGI deployment
 - `UI/config.py` — paths, ports, defaults
-- `UI/models.py` — Bot, Personality, BotConfig + JSON repos
+- `UI/models.py` — Bot, Skill, BotConfig + repos
 - `UI/llm.py` — LLMRouter: local Ollama (priority) + remote fallback
 - `UI/scheduler.py` — stdlib background scheduler for timed bot runs
-- `UI/routes/` — Flask blueprints (bots, personalities, mcps, knowledge, settings, agents)
+- `UI/routes/` — Flask blueprints (bots, skills, mcps, knowledge, settings)
 
 **Endpoints:**
 - `GET /api/bots` — List all bots
-- `POST /api/bots` — Create new bot (with personality + schedule)
+- `POST /api/bots` — Create new bot (with skill + schedule)
 - `GET /api/bots/{id}` — Get bot details
 - `PUT /api/bots/{id}` — Update bot
 - `DELETE /api/bots/{id}` — Delete bot
 - `POST /api/bots/{id}/chat` — Send message to bot (natural language)
 - `POST /api/bots/{id}/run` — Run bot's scheduled task
-- `GET /api/personalities` — List personalities
-- `POST /api/personalities` — Create new personality
+- `GET /api/skills` — List skills
+- `POST /api/skills` — Create new skill
 - `GET /api/mcps` — List registered MCPs (proxied to MCP service)
 - `GET /api/mcp/marketplace` — Open MCP marketplace
 - `GET /api/settings` — Get settings (LLM provider, scheduler)
@@ -72,10 +72,10 @@ Five features, done the simple way:
 - `GET /api/mcp/remote` — Remote marketplace (built-ins + curated community)
 - `POST /api/mcp/import/{id}` — Copy a remote MCP into the local registry
 - `POST /api/mcp/enable/{id}` / `POST /api/mcp/disable/{id}` — Toggle a local MCP
-- `GET /api/agents/active` — Agents with id, source, and enabled state
-- `POST /api/agents/toggle/{id}` — Enable/disable an agent
-- `POST /api/agents/refresh` — Re-discover agents + import remote personalities
-- `GET /api/agents` — List available Agent personalities
+- `GET /api/skills/active` — Skills with id, source, and enabled state
+- `POST /api/skills/toggle/{id}` — Enable/disable a skill
+- `POST /api/skills/refresh` — Re-discover skills + import remote skills
+- `GET /api/skills` — List available skills
 - `GET /api/health` — Health check
 
 ### MCP Service — `MCP/` (port 5002)
@@ -100,11 +100,11 @@ Five features, done the simple way:
 - `POST /api/mcp/knowledge/{bot_id}` — Append to bot knowledge base
 - `GET /api/health` — Health check
 
-### Agents Plugin System — `Agents/`
+### Skills Plugin System — `Skills/`
 
-- Local plugins: `Agents/local/*.py` (scanned for `AgentBase` subclasses)
-- Remote plugins: Git repository URLs in `Agents/sources.json`
-- Plugin base class: `AgentBase` with `execute()` method
+- Local plugins: `Skills/local/*.py` (scanned for `SkillBase` subclasses)
+- Remote plugins: Git repository URLs in `Skills/sources.json`
+- Plugin base class: `SkillBase` with `execute()` method
 
 ## Quick Start (Ollama first — no API keys)
 
@@ -138,7 +138,7 @@ Open browser to http://host-ip-or-dns:5001 (UI) to begin interacting with the pl
 
 ## Environment Variables
 
-- `UI_INSTANCES_DIR` — directory for UI runtime JSON state (bots, personalities, MCPs, settings). Defaults to `UI/instances`.
+- `UI_INSTANCES_DIR` — directory for UI runtime JSON state (bots, MCPs, settings). Defaults to `UI/instances`.
 - `MCP_INSTANCES_DIR` — directory for MCP runtime JSON state. Defaults to `MCP/instances`.
 - `MCP_SERVICE_URL` — base URL of the MCP service used by the UI. Defaults to `http://localhost:5002`.
 - `UI_PORT` / `MCP_PORT` — service ports. Defaults to `5001` / `5002`.
@@ -149,7 +149,7 @@ Open browser to http://host-ip-or-dns:5001 (UI) to begin interacting with the pl
 
 ## Testing
 
-- `pytest` runs unit tests for `UI`, `MCP`, and `Agents`.
+- `pytest` runs unit tests for `UI`, `MCP`, and `Skills`.
 - Root `conftest.py` sets `UI_START_SCHEDULER=false` before test collection.
 - Tests import factories directly: `from UI.app import create_ui_app`, `from MCP.app import create_mcp_app`.
 - Run all unit tests: `python -m pytest -q`
@@ -165,8 +165,8 @@ The root e2e suite starts both services in-process on ports 5123/5124 with isola
 ## Bot Creation Flow
 
 1. Open http://host-ip-or-dns:5001
-2. Click "New Bot", enter a name, select an Agent personality (from registered Agents), and optionally configure a scheduled task
-3. The bot embodies the selected personality's system prompt and skill set
+2. Click "New Bot", enter a name, select a skill (from registered skills), and optionally configure a scheduled task
+3. The bot embodies the selected skill's system prompt and skill set
 4. Chat with the bot in natural language, or run its scheduled task on demand
 
 ## Settings
@@ -179,13 +179,13 @@ Click "Settings" to configure:
   Cloud / Remote Local section below the cards takes focus in those modes
 - MCP Marketplace: add your own MCPs, plus local and remote (mcpmarket.com
   and community) listings
-- Agent Personalities: local agents on by default and disableable, plus a
-  remote git repo to sync agents and personalities from
+- Skills: local skills on by default and disableable, plus a
+  remote git repo to sync skills from
 - Scheduler enabled and tick interval (a general setting, above the tabs)
 
-## Contributing agents
+## Contributing skills
 
-Write your own agents and personalities in a git repo and load them from
-**Settings → Agent Personalities → Sync Agents**. See
-[CONTRIBUTE.md](CONTRIBUTE.md) for the agent contract, the personality
+Write your own skills in a git repo and load them from
+**Settings → Skills → Sync Skills**. See
+[CONTRIBUTE.md](CONTRIBUTE.md) for the skill contract, the skill
 JSON schema, and a repo layout you can copy.

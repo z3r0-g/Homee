@@ -44,7 +44,7 @@ def get_settings():
 def save_settings_endpoint():
     data = request.get_json(silent=True) or {}
     # Merge over CURRENT settings (not defaults): merging over defaults
-    # reset every field the form does not send (mode, agents.git_url, ...)
+    # reset every field the form does not send (mode, skills.git_url, ...)
     # on every save. load_settings() already deep-merges over defaults.
     merged = load_settings()
     def _deep_merge(base, override):
@@ -121,7 +121,7 @@ def env_vars():
     settings = load_settings()
     prefix = request.args.get("prefix", "")
 
-    # Check for AGENT_ env vars in the settings or environment
+    # Check for SKILL_ env vars in the settings or environment
     vars_dict = settings.get("env_vars", {}) if isinstance(settings.get("env_vars"), dict) else {}
 
     if prefix:
