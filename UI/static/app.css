@@ -19,8 +19,16 @@
         padding: 4px 8px;
     }
 
-    /* Hide status pills on mobile to keep the header clean. */
+    /* Pills are relocated to the chat composer on mobile (right of
+       the Run Task button) by openBotChat, so hide them from the
+       header here to avoid duplication. */
     .header-actions .header-status {
+        display: none;
+    }
+
+    /* The header-actions container is empty on mobile (pills moved to
+       the composer), so hide it to avoid an empty flex gap. */
+    .header-actions {
         display: none;
     }
 }
@@ -862,6 +870,17 @@ button,
 
     .chat-composer {
         flex-wrap: wrap;
+    }
+
+    /* Status pills relocated into the composer on mobile (appended
+       to the right of the Run Task button by openBotChat). They keep
+       their status colours (.ok/.warn/.bad) but need a visible
+       background for the light chat surface and compact sizing. */
+    .chat-composer .header-status {
+        display: inline-flex;
+        opacity: 1;
+        font-size: 0.7rem;
+        padding: 3px 8px;
     }
 
     .chat-composer button,

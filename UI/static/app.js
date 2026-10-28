@@ -330,6 +330,9 @@ async function enableBot(botId) {
 async function openBotChat(botId) {
     const bot = globalBots.find(b => b.id === botId);
     if (!bot) return;
+    // Close the mobile sidebar so focus returns to the chat view,
+    // mirroring how Settings / New Bot / pills dismiss the drawer.
+    toggleSidebar(false);
     currentBotId = botId;
     attachedFile = null;
 
@@ -372,8 +375,8 @@ async function openBotChat(botId) {
     infoDiv.dataset.botId = bot.id;
     const cfg = bot.config || {};
     const barActions = cfg.enabled
-        ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">Disable</button>`
-        : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-enable</button>`;
+        ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">DISABLE</button>`
+        : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-Enable</button>`;
     infoDiv.innerHTML = `<span class="bot-meta">Skill: ${escapeHtml(resolveSkillName(bot.skill_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
     chatArea.appendChild(infoDiv);
 
@@ -428,6 +431,17 @@ async function openBotChat(botId) {
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(input, botId); });
 
     document.getElementById('runTaskBtn').addEventListener('click', () => runBotTask(botId));
+
+    // On mobile, relocate the status pills from the header into the
+    // composer — to the right of the Run Task button — so they stay
+    // accessible without a separate header row. appendChild moves the
+    // existing nodes (event listeners preserved); loadLlmStatus /
+    // loadMcpStatus use getElementById so they still find the pills.
+    if (window.innerWidth <= 768) {
+        if (llmStatusPill) formDiv.appendChild(llmStatusPill);
+        if (mcpStatusPill) formDiv.appendChild(mcpStatusPill);
+        if (skillsPill) formDiv.appendChild(skillsPill);
+    }
 }
 
 // Send message to bot
@@ -663,15 +677,8 @@ if (sidebarCloseBtn) {
     });
 }
 
-// Close sidebar when a bot is opened on mobile.
-if (sidebarEl && chatArea) {
-    chatArea.addEventListener('click', (e) => {
-        const botItem = e.target.closest('.bot-item');
-        if (botItem && window.innerWidth <= 768) {
-            toggleSidebar(false);
-        }
-    });
-}
+// Sidebar closes on bot selection via toggleSidebar(false) inside
+// openBotChat (mirrors Settings / New Bot / pills behaviour).
 
 // ── Skills status pill: opens Settings → Skills tab ───────────────────
 // Like the MCP pill, clicking it loads settings and jumps to a tab.
@@ -1224,7 +1231,7 @@ function renderModelBrowser() {
                 </div>
                 <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
                 <div class="model-blurb">${escapeHtml(m.blurb || '')}</div>
-                ${isInstalled ? '' : `<button type="button" class="btn-secondary small" data-pull="${escapeHtml(m.name)}">Pull</button>`}
+                ${isInstalled ? '' : `<button type="button" class="btn-save small" data-pull="${escapeHtml(m.name)}">Pull</button>`}
             </div>`;
         }).join('') || '<p style="color: var(--color-muted);">No models match this filter.</p>';
     }
@@ -1597,9 +1604,9 @@ function renderMcpGrid() {
                 <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
                 <div class="mcp-description">${isLeaderboard ? `${escapeHtml(mcp.author || '')} · ${escapeHtml(mcp.category || '')} · ★ ${escapeHtml(mcp.stars || '')}` : `Source: ${escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}`}</div>
                 <div class="mcp-actions">
-                    ${hasEndpoint ? `<button type="button" class="btn-secondary small ${imported ? 'btn-disabled' : ''}" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}" ${imported ? 'disabled title="Already installed in Local MCPs"' : ''}>${imported ? 'Imported' : 'Import →'}</button>` : ''}
-                    ${!hasEndpoint && mcp.source_url ? `<button type="button" class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Use →</button>` : ''}
+                    ${hasEndpoint ? `<button type="button" class="btn-save small ${imported ? 'btn-disabled' : ''}" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}" ${imported ? 'disabled title="Already installed in Local MCPs"' : ''}>${imported ? 'Imported' : 'Import'}</button>` : ''}
                     ${isLeaderboard && mcp.source_url ? `<button type="button" class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
+                    ${!hasEndpoint && mcp.source_url ? `<button type="button" class="btn-save small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Install</button>` : ''}
                 </div>
             </div>`;
     }).join('');
