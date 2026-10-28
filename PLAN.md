@@ -1,95 +1,85 @@
-# AI Agent Bot Platform — Refactor Plan
+# Homee — Full rebrand: Agents/Personalities → Skills
 
-## Structure (Python 3.13 App Factory Pattern, 2 Services)
+Checkpoint plan (committed first so a later session can resume if credits run out).
+Branch: `ux-repair`. Prior work on this branch: pill CSS + cache-busting,
+Skills UI rebrand, leaderboard tabs (MCP + Skills). This plan covers only the
+deep rebrand below.
 
-```
-/home/z3r0/Server/
-├── README.md
-├── PLAN.md
-├── conftest.py             # Root pytest config (sets UI_START_SCHEDULER=false)
-- `pytest.ini` — `pythonpath=.`, `testpaths=UI/tests MCP/tests Agents/tests` (unit tests); e2e tests run via `pytest e2e/`
-- `test_homee_e2e.py` — Playwright end-to-end tests (root)
-├── requirements.txt
-├── Agents/                   # Agent plugin library (treated like its own repo)
-│   ├── __init__.py
-│   ├── app.py              # AgentBase + AgentResult + built-in tools + dispatch
-│   ├── registry.py         # Discovers agents from local dir + git repos
-│   ├── sources.json        # Agent sources: local dir + git repo URLs
-│   ├── local/              # Local agent modules
-│   │   ├── __init__.py
-│   │   └── demo.py         # Example agent (Demo System Agent)
-│   └── tests/
-│       └── test_agents.py
-├── UI/                    # PORT 5001 — Bot admin UX + chat + scheduling
-│   ├── __init__.py        # Empty package marker
-│   ├── app.py            # create_ui_app() + module-level app + entry point
-│   ├── config.py         # Paths, ports, defaults
-│   ├── llm.py            # LLMRouter: local Ollama (priority) + remote fallback
-│   ├── models.py         # Bot, Personality, BotConfig + JSON repos
-│   ├── scheduler.py      # Stdlib background scheduler for timed bot runs
-│   ├── routes/           # Flask blueprints (app factory pattern)
-│   │   ├── __init__.py
-│   │   ├── bots.py
-│   │   ├── personalities.py
-│   │   ├── mcps.py       # Proxies to MCP service
-│   │   ├── knowledge.py
-│   │   ├── settings.py   # LLM provider + scheduler settings
-│   │   └── agents.py     # Agent registry listing
-│   ├── static/css/style.css
-│   ├── static/js/app.js  # Frontend: NL chat + settings UX
-│   ├── templates/index.html
-│   ├── instances/        # Runtime JSON state (bots, knowledge, etc.)
-│   └── tests/
-│       ├── conftest.py
-│       └── test_ui.py
-├── MCP/                   # PORT 5002 — MCP endpoints consumed by Agents
-    ├── __init__.py        # Empty package marker
-    ├── app.py            # create_mcp_app() + module-level app + entry point
-    ├── config.py         # Paths, ports, marketplace
-    ├── routes.py         # MCP CRUD + marketplace + execute endpoint
-    └── endpoints/        # Agent-callable MCP endpoints
-        ├── __init__.py
-        ├── system.py     # disk + shell
-        └── knowledge.py  # KB read/append
-    └── tests/
-        ├── conftest.py
-        └── test_mcp.py
-```
+## Decisions (user, 2026-10-27)
+- Feed method: BACKLOG. Skills + MCP remote content are static snapshots,
+  not live feeds. Nothing feed-related ships here.
+- Skill MD files live in `Skills/` (repo root), NOT `UI/instances/skills/`.
+- NO compat shims: no `AgentBase` alias, no settings/env/bot-field fallbacks,
+  no legacy remote JSON import. Consequences (accepted): bots lose their
+  skill assignment once (re-pick it); settings `agents` key is ignored;
+  remote `.py` plugins must subclass `SkillBase`.
+- `UI/routes/personalities.py` + `UI/routes/agents.py` merge into ONE
+  `UI/routes/skills.py` (both would otherwise be `skills.py`).
+- MD format (SKILL.md-style, no new dependency): frontmatter
+  `name`/`description`/`model` + system-prompt body + `## Skills` /
+  `## Abilities` bullet lists + `## Guardrails` / `## Tools` as ```json
+  fences. One file per skill: `Skills/<id>.md`. Parser/writer:
+  `UI/skill_md.py` (dependency-free frontmatter parser).
+- Skill store: a directory of `.md` files (replaces single
+  `personalities.json`). First load migrates a legacy `personalities.json`
+  if present: writes `.md` files, renames the JSON to `.bak`. This is the
+  ordered JSON→MD conversion, not a compat shim.
+- Verified 2026-10-27: the old `UI/instances/personalities/*.json`
+  definition files do NOT exist on `ux-repair` (absent from the branch).
+  No definition files ship as `.md` here; local skills are the
+  `Skills/local/*.py` plugins, and `.md` files appear as users create
+  skills (modal) or sync repos. The main-branch definitions are recoverable
+  from git history if ever wanted as `.md`.
 
-## How Requirements Map
+## File map
+- `Agents/` → `Skills/` (`app.py`, `registry.py`, `sources.json`,
+  `local/*.py`, `tests/test_agents.py` → `test_skills.py`).
+- `UI/routes/skills.py` (merged, blueprint `skills_bp`).
+- `UI/models.py`: `Personality` → `Skill`, `personalities_repo` →
+  `skills_repo`, `Bot.personality_id` → `skill_id`.
+- `UI/config.py`: `PERSONALITIES_DIR` → `SKILLS_DIR` (repo-root `Skills/`).
+- `UI/routes/bots.py`, `UI/routes/settings.py`, `UI/app.py`: call updates.
+- `UI/static/app.js`, `UI/templates/app.html`, `UI/static/app.css`:
+  identifier + route sweep (see below).
+- Docs: `README.md`, `CONTRIBUTE.md` (MD skill format, new routes),
+  `install.sh` (paths).
+- Delete: `Agents/*`, `UI/routes/agents.py`, `UI/routes/personalities.py`.
 
-| Requirement | Implementation |
-|---|---|
-| **UI = simplified admin of Agents via NL + settings UX** | `/api/bots` CRUD, `/api/bots/<id>/chat` natural-language chat, `/api/settings` for LLM/provider/schedule defaults, SPA frontend |
-| **Bot creation asks which Agent personality to embody** | New-bot form lists `/api/personalities`; bot stores `personality_id`; personality's `system_prompt` seeds every chat/scheduled run |
-| **Bots run Agent skill as scheduled/configured** | `Bot.schedule` (interval) + `task_prompt`; stdlib background scheduler triggers runs via assigned Agent personality |
-| **Local Ollama first, shared cloud LLM APIs configurable** | `LLMRouter`: local Ollama priority #1; remote via OpenAI-compatible endpoint (base_url/api_key/model from settings); automatic fallback |
-| **Agents dir treated like a repo; external agents via git config** | `Agents/registry.py` discovers agents from `sources.json` `local_dir` (now `Agents/local/`) using `importlib` with `__package__ = "Agents"`; git repos listed in `sources.json` are cloned into `Agents/remote/<name>/` and scanned for `AgentBase` subclasses |
-| **MCP = custom endpoints for Agents** | MCP service exposes `/api/mcp/execute/<name>`, `/api/mcp/system/disk`, `/api/mcp/system/shell`, `/api/mcp/knowledge/<bot_id>` plus CRUD/marketplace; UI proxies MCP calls |
+## Identifier map
+- `AgentBase` → `SkillBase`, `AgentResult` → `SkillResult`,
+  `AgentRegistry` → `SkillRegistry`, `agent_registry` → `skill_registry`,
+  `AGENT_MODEL` → `SKILL_MODEL` (value still from `OLLAMA_MODEL`).
+- Plugin classes `*Agent` → `*Skill`; display names `* Agent` →
+  `* Skill` (e.g. `Burgundy (Weather Skill)`).
+- `list_agents`/`get_agent` → `list_skills`/`get_skill`;
+  `REMOTE_DIR`/`LOCAL_DIR` → `Skills/remote`, `Skills/local`.
+- Routes: `/api/skills/*` (list, CRUD, active, toggle, import-git,
+  available, sources, refresh, leaderboard). Response keys `skills`,
+  `skills_imported`. Item `type`: `skill` (with `source`: `saved` /
+  `discovered`).
+- Settings key `agents` → `skills`; env prefix `AGENT_` → `SKILL_`.
+- Frontend: `loadPersonalitiesForNewBot` → `loadSkillsForNewBot`,
+  `renderAgentPersonalities` → `renderSkills`,
+  `resolvePersonalityName` → `resolveSkillName`, `bot.personality_id` →
+  `bot.skill_id`, `/api/personalities` + `/api/agents/*` → `/api/skills/*`,
+  DOM ids `personality*` → `skill*` (`skillModal`, `skillForm`, `skillName`,
+  `skillDescription`, `skillSkills`, `skillAbilities`, `skillSystemPrompt`,
+  `skillList`, `newBotSkill`, `editBotSkill`), `data-tab`/`tab-skills`,
+  CSS `personality-*` → `skill-*`.
 
-## Services
+## Order
+1. This file — commit alone as checkpoint.
+2. `Skills/` package (renamed files + identifiers + registry paths).
+3. `UI/skill_md.py` + Skill model + dir-based SkillRepository + migration.
+4. `UI/routes/skills.py` (merged) + `app.py`/`bots.py`/`settings.py`/
+   `config.py` call updates.
+5. Frontend sweep (`app.js`/`app.html`/`app.css`).
+6. Docs + `install.sh`.
+7. Tests + push + delete old paths + read-back verify.
 
-- **UI Service** (`UI/`): `create_ui_app()` factory, port 5001
-  - `app.py` contains the factory + module-level `app` for WSGI deployment
-  - Entry point: `python -m UI.app`
-  - WSGI handler: `UI.app:app`
-- **MCP Service** (`MCP/`): `create_mcp_app()` factory, port 5002
-  - `app.py` contains the factory + module-level `app` for WSGI deployment
-  - Entry point: `python -m MCP.app`
-  - WSGI handler: `MCP.app:app`
-
-Start each service independently: `python -m UI.app` (port 5001) and `python -m MCP.app` (port 5002).
-
-## Deployment (Azure App Service)
-
-Configure the WSGI handler in App Settings:
-- **UI**: `WSGI_HANDLER = UI.app:app`
-- **MCP**: `WSGI_HANDLER = MCP.app:app`
-
-The module-level `app` variable in each `app.py` is the WSGI callable.
-
-## Testing
-
-- Root `conftest.py` sets `UI_START_SCHEDULER=false` before test collection
-- Tests import factories directly: `from UI.app import create_ui_app`, `from MCP.app import create_mcp_app`
-- Run with: `python -m pytest -v`
+## Verification
+- `pytest UI/tests Skills/tests` green; `node --check app.js`;
+  smoke `GET /` + `GET /api/skills/leaderboard`.
+- Branch read-back: no `Agents/` paths, no `personalities.py`/`agents.py`,
+  no `/api/agents` or `/api/personalities` strings in code, no `AgentBase`
+  or `agent_registry` references outside this plan.
