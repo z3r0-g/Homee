@@ -111,7 +111,7 @@ Five features, done the simple way:
 Homee works out of the box with local Ollama. No cloud account needed:
 
 1. Install Ollama: `curl -fsSL https://ollama.com/install.sh | sh`
-2. Pull the default model: `ollama pull qwen2.5:7b` (on hosts under 12 GB RAM the default is `qwen2.5:3b` instead — Homee picks by host RAM; override with `OLLAMA_MODEL`)
+2. Pull the default model: `ollama pull llama3.2:3b` (Homee's default local model; override with `OLLAMA_MODEL`)
    (or start the UI first and pull it from **Settings → Models**)
 3. Start the services below and open http://host-ip-or-dns:5001 —
    the header shows the live Ollama status, and chat works immediately.
@@ -142,7 +142,7 @@ Open browser to http://host-ip-or-dns:5001 (UI) to begin interacting with the pl
 - `MCP_INSTANCES_DIR` — directory for MCP runtime JSON state. Defaults to `MCP/instances`.
 - `MCP_SERVICE_URL` — base URL of the MCP service used by the UI. Defaults to `http://localhost:5002`.
 - `UI_PORT` / `MCP_PORT` — service ports. Defaults to `5001` / `5002`.
-- `OLLAMA_MODEL` — default local model. Defaults to `qwen2.5:7b` on hosts with 12 GB+ RAM, `qwen2.5:3b` below that (matches `install.sh`).
+- `OLLAMA_MODEL` — default local model. Defaults to `llama3.2:3b` (matches `install.sh`).
 - `OLLAMA_HOST` — Ollama server URL. Defaults to `http://localhost:11434`.
 - `UI_START_SCHEDULER` — set to `false` to disable the background scheduler (used in tests).
 - `MCP_KNOWLEDGE_DIR` — directory for MCP knowledge-base files. Defaults to `MCP/instances/knowledge`.

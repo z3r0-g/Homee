@@ -31,7 +31,7 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 
 **State:**
 - JSON repos in `UI/instances/` and `MCP/instances/` (overridable via `UI_INSTANCES_DIR`, `MCP_INSTANCES_DIR`)
-- `LLMRouter`: Ollama primary (`OLLAMA_HOST`, `OLLAMA_MODEL=qwen2.5:7b`), remote fallback
+- `LLMRouter`: Ollama primary (`OLLAMA_HOST`, `OLLAMA_MODEL=llama3.2:3b`), remote fallback
 - Background scheduler (`UI/scheduler.py`, disable via `UI_START_SCHEDULER=false` for tests)
 - `install.sh`, `requirements.txt`, `conftest.py` sets scheduler off for tests
 - Node.js + npm required (frontend assets)
@@ -51,7 +51,7 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 ## 3. UX-Repair Audit — What to Fix
 
 ### 3.1 Critical Path (P0)
-1.  **First-Run Experience:** If `GET /api/llm/status` says Ollama unreachable or model missing, show banner + button: `Pull qwen2.5:7b` that calls `POST /api/llm/pull` and polls `GET /api/llm/pull`.
+1.  **First-Run Experience:** If `GET /api/llm/status` says Ollama unreachable or model missing, show banner + button: `Pull llama3.2:3b` that calls `POST /api/llm/pull` and polls `GET /api/llm/pull`.
 2.  **Bot Creation:** Form validation (name required, personality required), disable submit while saving, optimistic sidebar update, success toast, focus management.
 3.  **Chat:** Input disabled when bot/busy/LLM offline, show typing/streaming indicator, render markdown, handle 202/409 from pull, retry button.
 4.  **Error Boundaries:** Replace raw `fetch` errors with human messages: "Ollama offline — start Ollama or check Settings".
@@ -88,7 +88,7 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
 **Frontend structure guess: `UI/static/` or `UI/templates/` + `UI/routes/` serving SPA**
 
 - [ ] **Header component:** Poll `/api/llm/status` every 15s, show colored dot + text + action
-  - green: `Ollama: qwen2.5:7b ready`
+  - green: `Ollama: llama3.2:3b ready`
   - yellow: `Model missing — Pull in Settings`
   - red: `Ollama offline — http://localhost:11434 not reachable`
 - [ ] **Bot API UX:**
@@ -110,7 +110,7 @@ The `ux-repair` branch was created to fix the user-facing experience before 1.0.
   pip install -r requirements.txt
   # Check Ollama
   if ! command -v ollama &> /dev/null; then curl -fsSL https://ollama.com/install.sh | sh; fi
-  ollama pull qwen2.5:7b || echo "Pull manually from Settings -> Models"
+  ollama pull llama3.2:3b || echo "Pull manually from Settings -> Models"
   npm ci --prefix UI || npm install --prefix UI
   npm run build --prefix UI || echo "No frontend build step"
   ```

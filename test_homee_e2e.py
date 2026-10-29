@@ -2,7 +2,7 @@ from playwright.sync_api import expect
 
 
 def test_homepage_loads(page):
-    expect(page).to_have_title("Bot UI - AI Agent Management")
+    expect(page).to_have_title("Homee AI Agent Platform")
     expect(page.get_by_test_id("new-bot-btn")).to_be_visible()
 
 
@@ -25,7 +25,10 @@ def test_settings_modal_opens(page):
 
 
 def test_marketplace_loads(page):
-    # marketplace modal may be opened via? no button in UI? It exists hidden.
-    page.evaluate("document.getElementById('marketplaceModal').classList.add('active')")
+    # MCP marketplace lives inside the Settings modal → MCPs tab.
+    # Cards are rendered by JS into #mcpGrid as .mcp-card elements.
+    page.get_by_test_id("settings-btn").click()
+    expect(page.locator("#settingsModal")).to_have_class("modal active")
+    page.click('.tab-btn[data-tab="mcp"]')
     page.wait_for_timeout(500)
-    expect(page.locator(".marketplace-card").first).to_be_visible()
+    expect(page.locator(".mcp-card").first).to_be_visible()

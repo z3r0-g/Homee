@@ -16,11 +16,11 @@ import ollama
 
 __all__ = ["SkillBase", "SkillResult"]
 
-# NOTE on tags: in Ollama, a bare "qwen2.5" resolves to the :latest tag,
-# which is NOT satisfied by an installed "qwen2.5:7b" — always use a full
+# NOTE on tags: in Ollama, a bare "llama3.2" resolves to the :latest tag,
+# which is NOT satisfied by an installed "llama3.2:3b" — always use a full
 # tag. OLLAMA_MODEL wins when set (same convention as the UI service),
-# so a host with a different tag installed (e.g. qwen2.5:3b) just sets it.
-SKILL_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
+# so a host with a different tag installed (e.g. llama3.2:3b) just sets it.
+SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
 @dataclass
 class SkillResult:

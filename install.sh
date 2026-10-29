@@ -54,15 +54,16 @@ APP_ROOT="$(pwd)"
 UI_PORT=5001
 MCP_PORT=5002
 
-# Default model, RAM-aware (same rule as UI/model_catalog.py): hosts
-# under 12 GB total RAM default to qwen2.5:3b, roomier hosts to qwen2.5:7b.
+# Default model, RAM-aware (same rule as UI/model_catalog.py): llama3.2:3b
+# is the default for all hosts — at ~2 GB it fits even a minimal 8 GB host
+# and runs fastest on the CPU-only hardware Homee targets.
 # An explicitly exported MODEL_NAME always wins.
 if [ -z "${MODEL_NAME:-}" ]; then
     TOTAL_GB=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}')
     if [ -n "$TOTAL_GB" ] && [ "$TOTAL_GB" -lt 12 ]; then
-        MODEL_NAME="qwen2.5:3b"
+        MODEL_NAME="llama3.2:3b"
     else
-        MODEL_NAME="qwen2.5:7b"
+        MODEL_NAME="llama3.2:3b"
     fi
 fi
 

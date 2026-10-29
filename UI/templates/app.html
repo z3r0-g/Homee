@@ -39,8 +39,8 @@
             </div>
             <div class="sidebar-content" id="botList"></div>
             <div class="sidebar-footer">
-                <button class="btn-new-bot" id="newBotBtn">+ New Bot</button>
-                <button class="btn-secondary" id="settingsBtn">Settings</button>
+                <button class="btn-new-bot" id="newBotBtn" data-testid="new-bot-btn">+ New Bot</button>
+                <button class="btn-secondary" id="settingsBtn" data-testid="settings-btn">Settings</button>
             </div>
         </aside>
 
@@ -244,11 +244,11 @@
                             <div id="ollamaSearchLink"></div>
                             <div class="form-group" id="group-local-model">
                                 <label>Primary Model</label>
-                                <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
+                                <input type="text" id="settingsLocalModel" value="llama3.2:3b">
                             </div>
                             <div class="form-group" id="group-secondary-model">
                                 <label>Secondary Model</label>
-                                <input type="text" id="settingsSecondaryModel" placeholder="e.g. qwen2.5:7b">
+                                <input type="text" id="settingsSecondaryModel" placeholder="e.g. llama3.2:3b">
                                 <small id="secondaryModelHint" class="llm-status"></small>
                             </div>
                         </div>

@@ -60,10 +60,6 @@ def _local_error_message(exc: Exception, model: str) -> str:
 
 def _model_name_matches(configured: str, installed: str) -> bool:
     """Compare Ollama model names, treating a missing tag as ":latest".
-
-    This matters because Ollama tags are exact: a configured "qwen2.5"
-    (i.e. qwen2.5:latest) is NOT satisfied by an installed "qwen2.5:7b",
-    and silently treating them as equal is how fresh installs broke.
     """
     def _norm(name: str) -> str:
         name = name.strip()

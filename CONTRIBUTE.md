@@ -40,8 +40,8 @@ class TideSkill(SkillBase):
         "You are a harbour assistant. Answer tide questions briefly "
         "and always give the next high and low tide."
     )
-    model = "qwen2.5:7b"  # use a full tag: bare "qwen2.5" resolves to
-                           # :latest, which an installed qwen2.5:7b does
+    model = "llama3.2:3b"  # use a full tag: bare "llama3.2" resolves to
+                           # :latest, which an installed llama3.2:3b does
                            # NOT satisfy, and first chat will fail.
 ```
 
@@ -114,7 +114,7 @@ directly into `Skills/` (picked up on next load).
 ## Checklist before sharing a repo
 
 - [ ] Every skill has a distinct `name` (collisions overwrite silently).
-- [ ] Every `model` uses a full tag (`qwen2.5:7b`, not `qwen2.5`).
+- [ ] Every `model` uses a full tag (`llama3.2:3b`, not `llama3.2`).
 - [ ] Skill modules import cleanly with only stdlib + `ollama` + `Skills.app`.
 - [ ] Skill MD parses (frontmatter + sections as above).
 - [ ] A README says what each skill does and what model it expects.

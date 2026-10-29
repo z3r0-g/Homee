@@ -18,13 +18,13 @@ from typing import Any, Dict, List, Optional
 # name, size_gb, capabilities, blurb
 MODELS: List[Dict[str, Any]] = [
     {"name": "qwen2.5:7b", "size_gb": 4.7, "capabilities": ["tool"],
-     "blurb": "General chat + tool use. Homee's default model."},
+     "blurb": "General chat + tool use."},
     {"name": "qwen3:8b", "size_gb": 5.2, "capabilities": ["thinking", "tool"],
      "blurb": "Reasoning model with tool use; shows its thinking."},
     {"name": "llama3.1:8b", "size_gb": 4.7, "capabilities": ["tool"],
      "blurb": "Meta's workhorse 8B with tool support."},
     {"name": "llama3.2:3b", "size_gb": 2.0, "capabilities": ["tool"],
-     "blurb": "Small and fast; a good second model on tight RAM."},
+     "blurb": "Homee's default model — small and fast, good on tight RAM."},
     {"name": "mistral:7b", "size_gb": 4.1, "capabilities": ["tool"],
      "blurb": "Fast general-purpose 7B with function calling."},
     {"name": "gemma3:4b", "size_gb": 3.3, "capabilities": ["vision"],
@@ -58,8 +58,8 @@ MODELS: List[Dict[str, Any]] = [
 CAPABILITIES = ["thinking", "tool", "vision", "code", "embedding"]
 
 # Fresh-install default model, by host size (see default_model()).
-SMALL_HOST_MODEL = "qwen2.5:3b"
-DEFAULT_MODEL = "qwen2.5:7b"
+SMALL_HOST_MODEL = "llama3.2:3b"
+DEFAULT_MODEL = "llama3.2:3b"
 SMALL_HOST_RAM_GB = 12
 
 
@@ -85,11 +85,11 @@ def host_total_ram_gb() -> Optional[float]:
 def default_model(total_gb: Optional[float] = None) -> str:
     """Fresh-install default local model for a host of this size.
 
-    Under 12 GB total RAM the 3B model is the default: a 7B (~4.7 GB
-    resident) leaves an 8 GB host right at the edge once the OS, Ollama,
-    and both services are counted, and CPU generation speed roughly
-    doubles going from 7B to 3B. Unknown RAM keeps the historical 7B
-    default rather than guessing small.
+    Returns ``llama3.2:3b`` for all hosts: at ~2 GB download it fits even
+    a minimal 8 GB host comfortably once the OS, Ollama, and both
+    services are counted, and 3B-class models run fastest on the
+    CPU-only hardware Homee targets. Unknown RAM also gets the 3B
+    default rather than guessing large.
     """
     if total_gb is not None and total_gb < SMALL_HOST_RAM_GB:
         return SMALL_HOST_MODEL

@@ -19,7 +19,7 @@ def test_demo_agent_subclass():
     assert issubclass(DemoSkill, SkillBase)
     skill = DemoSkill()
     assert skill.name == "Demo (System Skill)"
-    assert skill.model == "qwen2.5:7b"
+    assert skill.model == "llama3.2:3b"
     assert callable(get_disk_space)
     assert callable(run_shell)
 
@@ -115,7 +115,7 @@ def test_burgundy_agent_subclass():
     assert BurgundySkill is BurgundyWeatherSkill
     skill = BurgundySkill()
     assert skill.name == "Burgundy (Weather Skill)"
-    assert skill.model == "qwen2.5:7b"
+    assert skill.model == "llama3.2:3b"
 
 
 def test_registry_lists_burgundy_agent():

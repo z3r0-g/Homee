@@ -379,7 +379,7 @@ def test_skills_refresh_imports_remote_personality_json(client, tmp_path, monkey
 
 def test_llm_catalog_names_default_model(client):
     data = client.get("/api/llm/catalog").get_json()
-    assert data["default_model"] in ("qwen2.5:3b", "qwen2.5:7b")
+    assert data["default_model"] == "llama3.2:3b"
 
 
 def test_settings_default_model_is_ram_aware(client):

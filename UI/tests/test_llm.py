@@ -60,7 +60,7 @@ def _tmp_settings(tmp_path, monkeypatch):
 
 def test_default_local_model_matches_installer(_tmp_settings):
     # Both install.sh and the router pick the default by host RAM
-    # (qwen2.5:3b under 12 GB, qwen2.5:7b above); the router default must
+    # (llama3.2:3b for all hosts); the router default must
     # equal that rule, otherwise a fresh install fails first chat with
     # "model not found".
     from UI import model_catalog
@@ -277,8 +277,8 @@ def test_catalog_filter_by_capability():
 
 def test_default_model_by_ram():
     from UI import model_catalog
-    assert model_catalog.default_model(8.0) == "qwen2.5:3b"
-    assert model_catalog.default_model(11.9) == "qwen2.5:3b"
-    assert model_catalog.default_model(12.0) == "qwen2.5:7b"
-    assert model_catalog.default_model(16.0) == "qwen2.5:7b"
-    assert model_catalog.default_model(None) == "qwen2.5:7b"
+    assert model_catalog.default_model(8.0) == "llama3.2:3b"
+    assert model_catalog.default_model(11.9) == "llama3.2:3b"
+    assert model_catalog.default_model(12.0) == "llama3.2:3b"
+    assert model_catalog.default_model(16.0) == "llama3.2:3b"
+    assert model_catalog.default_model(None) == "llama3.2:3b"

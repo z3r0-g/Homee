@@ -33,13 +33,14 @@ DEBUG = os.getenv("UI_DEBUG", "false").lower() == "true"
 
 MCP_SERVICE_URL = os.getenv("MCP_SERVICE_URL", "http://localhost:5002")
 
-# Default local model, RAM-aware (see UI/model_catalog.py): hosts under
-# 12 GB total RAM default to qwen2.5:3b, roomier hosts to qwen2.5:7b.
+# Default local model, RAM-aware (see UI/model_catalog.py): llama3.2:3b
+# is the default for all hosts (the rule exists so big hosts could pick a
+# larger model if needed, but 3B fits everywhere Homee runs).
 # install.sh picks with the same rule. An explicit OLLAMA_MODEL env value
 # always wins, and an existing settings.json keeps its saved local_model
 # (disk wins over defaults on load), so this only affects fresh installs.
-# NOTE on tags: in Ollama, "qwen2.5" resolves to the :latest tag, which is
-# NOT satisfied by an installed qwen2.5:7b — always use a full tag.
+# NOTE on tags: in Ollama, "llama3.2" resolves to the :latest tag, which is
+# NOT satisfied by an installed llama3.2:3b — always use a full tag.
 def _default_ollama_model() -> str:
     env = os.getenv("OLLAMA_MODEL")
     if env:
@@ -48,7 +49,7 @@ def _default_ollama_model() -> str:
         from .model_catalog import default_model, host_total_ram_gb
         return default_model(host_total_ram_gb())
     except Exception:  # noqa: BLE001 - psutil optional
-        return "qwen2.5:7b"
+        return "llama3.2:3b"
 
 
 OLLAMA_MODEL = _default_ollama_model()

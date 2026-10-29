@@ -562,7 +562,7 @@ async function loadSettings() {
         const response = await fetch(`${API_BASE}/api/settings`);
         const settings = await response.json();
         currentSettings = settings;
-        document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'qwen2.5:7b';
+        document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'llama3.2:3b';
         document.getElementById('settingsSecondaryModel').value = settings.llm?.secondary_model || '';
         document.getElementById('settingsSecondaryBaseUrl').value = settings.llm?.secondary_base_url || '';
         document.getElementById('settingsSecondaryApiKey').value = settings.llm?.secondary_api_key || '';

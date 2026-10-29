@@ -54,7 +54,7 @@ def _save_json(path: Path, data: Any) -> None:
 
 @dataclass
 class Skill:
-    """skill with specialized skills and abilities."""
+    """specialized skills and abilities."""
 
     id: str
     name: str
