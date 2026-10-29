@@ -1,16 +1,12 @@
 # Homee AI Agent Platform
->Designed to run on repurposed Mac Mini A1347 Metal.
-
 ![Homee](UI/static/homee.png)
 
 ## Overview
-
-***WARNING*** This platform was designed with AI coding agents as a key component of the development workflow to provide a comprehensive system for managing AI agent bots on lightweight hardware with the following in mind:
-
-- **Bot Management**: Create, manage, and chat with AI agent bots
-- **MCP Integrations**: Model Context Protocol integrations (GitHub, Google Drive, Microsoft OneDrive)
-- **Agent Plugins**: Loadable agents from local directories or remote Git repositories
-- **Personalities**: Configure agent personalities with skills, abilities, and system prompts
+Homee is a self-hosted AI agent platform that lets you run autonomous AI agents,
+local LLMs, RAG knowledge bases, and workflow automations entirely on your own
+hardware. Designed for homelabs, edge computing, and privacy-first deployments,
+Homee provides a local alternative to cloud AI platforms while maintaining full
+control of your data.
 
 ## Prerequisites
 
