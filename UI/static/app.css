@@ -1,4 +1,3 @@
-/* Header wraps on narrow viewports so the Marketplace button stays reachable. */
 @media (max-width: 768px) {
     .topbar {
         flex-wrap: wrap;
@@ -19,16 +18,11 @@
         padding: 4px 8px;
     }
 
-    /* Pills are relocated to the chat composer on mobile (right of
-       the Run Task button) by openBotChat, so hide them from the
-       header here to avoid duplication. */
-    .header-actions .header-status {
+        .header-actions .header-status {
         display: none;
     }
 
-    /* The header-actions container is empty on mobile (pills moved to
-       the composer), so hide it to avoid an empty flex gap. */
-    .header-actions {
+        .header-actions {
         display: none;
     }
 }
@@ -206,7 +200,6 @@ body {
     color: var(--color-text);
 }
 
-/* Hide sidebar close button except on mobile. */
 .sidebar-close {
     display: none;
 }
@@ -448,7 +441,6 @@ button,
     opacity: 0.65;
 }
 
-/* Rendered assistant markdown: tight, no library. */
 .message-content p {
     margin: 0 0 8px;
 }
@@ -574,8 +566,7 @@ button,
     background: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
     -webkit-font-smoothing: antialiased;
-    /* The settings modal scrolls; keep the tabs reachable. */
-    position: sticky;
+        position: sticky;
     top: 0;
     z-index: 2;
 }
@@ -586,7 +577,7 @@ button,
 
 .tab-btn {
     flex: 1;
-    padding: 12px 8;
+    padding: 12px 8px;
     background: transparent;
     border: none;
     color: var(--color-muted);
@@ -703,8 +694,6 @@ button,
    Mobile — Safe area & base
    ========================================================== */
 
-/* Viewport safe-area insets for devices with notches, home indicators,
-   or gesture bars (iPhone X+, Android 14+ gesture nav). */
 .modal {
     padding: calc(16px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom));
 }
@@ -717,7 +706,6 @@ button,
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
-/* Mobile — base layout */
 @media (max-width: 768px) {
     .app-container {
         flex-direction: column;
@@ -796,7 +784,6 @@ button,
     display: block;
 }
 
-/* Mobile: sidebar becomes a full-screen drawer; the toggle shows. */
 @media (max-width: 768px) {
     .sidebar-toggle {
         display: flex;
@@ -872,11 +859,7 @@ button,
         flex-wrap: wrap;
     }
 
-    /* Status pills relocated into the composer on mobile (appended
-       to the right of the Run Task button by openBotChat). They keep
-       their status colours (.ok/.warn/.bad) but need a visible
-       background for the light chat surface and compact sizing. */
-    .chat-composer .header-status {
+        .chat-composer .header-status {
         display: inline-flex;
         opacity: 1;
         font-size: 0.7rem;
@@ -923,9 +906,7 @@ button,
 }
 
 .mode-switch-active {
-    /* Readable in both themes: tinted background, primary text. The old
-       rule set primary text ON a primary background (invisible label). */
-    border-color: var(--color-primary);
+        border-color: var(--color-primary);
     color: var(--color-primary);
     background: var(--color-primary-light);
 }
@@ -970,7 +951,6 @@ button,
     box-shadow: var(--shadow-sm);
 }
 
-/* Enabled / loaded state: green bar + tint (matches loaded model cards). */
 .skill-card.enabled,
 .mcp-card.enabled,
 .model-card.loaded {
@@ -978,7 +958,6 @@ button,
     background: var(--color-surface-3);
 }
 
-/* Disabled state. */
 .skill-card.disabled {
     opacity: 0.65;
     border-color: var(--color-border);
@@ -987,15 +966,6 @@ button,
 .mcp-card.selected {
     border-color: var(--color-primary);
     transform: translateY(2px);
-}
-
-.mcp-badge-leaderboard {
-    background-color: #b45309;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: bold;
 }
 
 .agent-card {
@@ -1099,11 +1069,6 @@ button,
 .skill-badge-local { background-color: #4a90e2; }
 .skill-badge-remote { background-color: #e91e63; }
 .skill-badge-env { background-color: #8b5cf6; }
-.skill-badge-leaderboard {
-    background-color: #b45309;
-    margin-left: auto;
-}
-
 .skill-empty {
     grid-column: 1 / -1;
     color: var(--color-muted);
@@ -1112,21 +1077,14 @@ button,
     text-align: center;
 }
 
-/* Colored status messages used across Settings modals. */
 .status-ok { color: var(--color-success); }
 .status-bad { color: var(--color-danger); }
 .status-warn { color: var(--color-warning); }
 
-/* Mode switch tints (classes assigned by renderModeSelector; previously
-   undefined, so the three modes looked identical). */
 .mode-switch-local_local { border-left: 3px solid var(--color-success); }
 .mode-switch-local_cloud { border-left: 3px solid var(--color-primary); }
 .mode-switch-local_remote_local { border-left: 3px solid var(--color-warning); }
 
-/* Skills tab uses marketplace-grid (same card system as LLMs and MCPs). */
-
-/* Mode switch internals: label over description (previously unstyled, so
-   both ran together on one truncated line). */
 .mode-switch-label,
 .mode-switch-description {
     display: block;
@@ -1143,13 +1101,11 @@ button,
     color: var(--color-muted);
 }
 
-/* HIG polish: buttons keep their look but behave like buttons. */
 button.mode-switch {
     font-family: inherit;
     text-align: left;
 }
 
-/* Disabled: dimmed, not interactive, but still visible. */
 .btn-disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -1157,7 +1113,6 @@ button.mode-switch {
     border-color: var(--color-border) !important;
 }
 
-/* Visible keyboard focus on every interactive control. */
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -1166,7 +1121,6 @@ textarea:focus-visible {
     outline-offset: 2px;
 }
 
-/* Respect reduced-motion preferences across the app's transitions. */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         transition: none !important;
@@ -1175,7 +1129,6 @@ textarea:focus-visible {
 
 /* ── Settings redesign: model browser, MCP sections, agent cards ───── */
 
-/* Icon buttons were unstyled (white UA default on the dark theme). */
 .btn-icon {
     display: inline-flex;
     align-items: center;
@@ -1194,6 +1147,7 @@ textarea:focus-visible {
     background: var(--color-surface-2);
     border-color: var(--color-primary);
 }
+
 .btn-secondary.small {
     padding: 6px 10px;
     font-size: 0.85rem;
@@ -1204,7 +1158,6 @@ textarea:focus-visible {
     font-size: 0.85rem;
 }
 
-/* Horizontal form row (git sync, MCP add form rows). */
 .form-row {
     display: flex;
     gap: 8px;
@@ -1215,7 +1168,6 @@ textarea:focus-visible {
     flex: 1;
 }
 
-/* Collapsible Local Models section. */
 .llms-header {
     display: flex;
     align-items: center;
@@ -1223,7 +1175,6 @@ textarea:focus-visible {
     margin-bottom: 8px;
 }
 
-/* Shared collapsible-section header (Local MCPs mirrors Local Models). */
 .collapse-header {
     display: flex;
     align-items: center;
@@ -1231,7 +1182,6 @@ textarea:focus-visible {
     margin-bottom: 8px;
 }
 
-/* Capability filter chips. */
 .chip-row {
     display: flex;
     flex-wrap: wrap;
@@ -1253,8 +1203,6 @@ textarea:focus-visible {
     background: var(--color-primary-light);
 }
 
-/* Model cards: green left border + tint when loaded on this host. */
-/* model-grid aliases marketplace-grid so LLM, MCP, and Skills grids match. */
 .model-grid {
     padding: 20px;
     display: grid;
@@ -1302,7 +1250,6 @@ textarea:focus-visible {
     flex-wrap: wrap;
 }
 
-/* Agent cards: children were unstyled, and status badges need color. */
 .agent-header {
     display: flex;
     align-items: center;
@@ -1329,7 +1276,6 @@ textarea:focus-visible {
     margin-top: 8px;
 }
 
-/* Mode section below the divider. */
 #modeSection h4 {
     margin: 0 0 4px;
 }
@@ -1342,14 +1288,12 @@ textarea:focus-visible {
    Bot working state, bot-info bar, starter prompts, model switch
    ========================================================== */
 
-/* Sidebar status turns accent while that bot has a task running. */
 .bot-item.working .bot-status {
     color: var(--color-primary);
     opacity: 1;
     font-weight: 600;
 }
 
-/* Bot-info bar: meta line + compact actions (no redundant name/status). */
 .bot-info .bot-meta {
     color: var(--color-muted);
     font-size: 0.85rem;
@@ -1362,7 +1306,6 @@ textarea:focus-visible {
     flex-wrap: wrap;
 }
 
-/* Starter prompt chips, shown only on an empty chat. */
 .starter-prompts {
     display: flex;
     gap: 8px;
@@ -1383,7 +1326,6 @@ textarea:focus-visible {
     background: var(--color-surface-3);
 }
 
-/* Fast/Smart segmented switch in the composer. */
 .model-switch {
     display: inline-flex;
     border: 1px solid var(--color-border);
@@ -1422,7 +1364,7 @@ textarea:focus-visible {
 
 .sidebar-search input {
     width: 100%;
-    padding: 16px 12px;
+    padding: 10px 12px;
     background: var(--color-surface-2);
     color: var(--color-text);
     border: 1px solid var(--color-border);
@@ -1472,7 +1414,6 @@ textarea:focus-visible {
     margin: 8px 0 0;
 }
 
-/* Attached-file chip above the composer. */
 .attached-file-bar {
     display: flex;
     align-items: center;
@@ -1493,8 +1434,6 @@ textarea:focus-visible {
     white-space: nowrap;
 }
 
-/* Tighten in-chat UX on mobile: reduce vertical spacing, smaller
-   padding on messages, tighter composer, compact bot-info bar. */
 @media (max-width: 768px) {
     .chat-area {
         padding: 8px;
@@ -1558,15 +1497,13 @@ textarea:focus-visible {
         font-size: 0.8rem;
     }
 
-    /* Stack composer buttons on mobile for better touch spacing. */
-    .chat-composer .btn-save,
+        .chat-composer .btn-save,
     .chat-composer #attachFileBtn,
     .chat-composer #runTaskBtn {
         flex: 0 0 auto;
     }
 
-    /* Model switch takes full width on mobile, above the input row. */
-    .chat-composer .model-switch {
+        .chat-composer .model-switch {
         order: -1;
         width: 100%;
     }
@@ -1576,4 +1513,633 @@ textarea:focus-visible {
         padding: 6px 10px;
         font-size: 0.8rem;
     }
+}
+
+.skill-badge-smithery {
+    background-color: #4a90e2;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+
+/* ==========================================================
+   Font Awesome integration
+   ========================================================== */
+
+button i.fa-solid,
+button i.fa-regular,
+button i.fa-brands,
+.header-status i {
+    pointer-events: none;
+}
+
+.btn-save i,
+.btn-secondary i,
+.btn-run-task i,
+.btn-new-bot i {
+    margin-right: 6px;
+}
+
+.btn-icon i,
+.icon-action i,
+.sidebar-toggle i,
+.close-modal i,
+.chat-composer #attachFileBtn i {
+    margin-right: 0;
+}
+
+.header-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.header-status:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+.sidebar-toggle i {
+    font-size: 1rem;
+}
+
+.close-modal {
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    line-height: 1;
+}
+
+.close-modal:hover {
+    background: var(--color-surface-2);
+}
+
+.bot-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    min-width: 0;
+}
+
+.bot-name i {
+    color: var(--color-muted);
+}
+
+.empty-pad {
+    padding: 20px;
+}
+
+/* ==========================================================
+   Shared status text, banner, health
+   ========================================================== */
+
+.llm-status {
+    font-size: 0.85rem;
+    color: var(--color-muted);
+    margin: 6px 0;
+}
+
+.llm-status.status-ok { color: var(--color-success); }
+.llm-status.status-bad { color: var(--color-danger); }
+
+.llm-banner {
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--color-warning);
+    border-radius: 8px;
+    background: rgba(255, 185, 0, 0.12);
+    font-size: 0.9rem;
+}
+
+.bot-health-small {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: var(--color-muted);
+    line-height: 1.5;
+}
+
+.bot-health-small:empty {
+    display: none;
+}
+
+/* ==========================================================
+   Toasts
+   ========================================================== */
+
+.toast-host {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: min(380px, calc(100vw - 32px));
+}
+
+.toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-left-width: 4px;
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    font-size: 0.9rem;
+    animation: toast-in 0.2s ease;
+    overflow-wrap: anywhere;
+}
+
+.toast.leaving {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast-info { border-left-color: var(--color-primary); }
+.toast-success { border-left-color: var(--color-success); }
+.toast-error { border-left-color: var(--color-danger); }
+.toast-info i { color: var(--color-primary); }
+.toast-success i { color: var(--color-success); }
+.toast-error i { color: var(--color-danger); }
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================
+   Search boxes (sidebar + marketplace panels)
+   ========================================================== */
+
+.search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.search-box > i {
+    position: absolute;
+    left: 12px;
+    color: var(--color-muted);
+    pointer-events: none;
+}
+
+.search-box input,
+.sidebar-search .search-box input {
+    width: 100%;
+    padding: 10px 12px 10px 36px;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.search-box input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* ==========================================================
+   Sub-tabs (Installed / Marketplace) — Cline-style
+   ========================================================== */
+
+.sub-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 16px 0 12px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.sub-tab {
+    padding: 8px 14px;
+    background: transparent;
+    color: var(--color-muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    font-weight: 500;
+    margin-bottom: -1px;
+}
+
+.sub-tab:hover {
+    color: var(--color-text);
+}
+
+.sub-tab.active {
+    color: var(--color-text);
+    border-bottom-color: var(--color-primary);
+}
+
+.sub-panel {
+    display: none;
+}
+
+.sub-panel.active {
+    display: block;
+}
+
+.panel-intro {
+    margin: 0 0 12px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--color-muted);
+}
+
+.panel-intro a,
+.llm-status a {
+    color: var(--color-primary);
+}
+
+/* ==========================================================
+   Chips with counts
+   ========================================================== */
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.chip:hover {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+}
+
+.chip-count {
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.chip.active .chip-count {
+    color: inherit;
+}
+
+/* ==========================================================
+   Item list: marketplace and installed rows
+   ========================================================== */
+
+.item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.list-empty {
+    margin: 24px 0;
+    text-align: center;
+    color: var(--color-muted);
+    font-size: 0.95rem;
+}
+
+.market-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.market-item:hover {
+    border-color: var(--color-primary);
+}
+
+.market-item.is-disabled {
+    opacity: 0.6;
+}
+
+.market-item-body {
+    min-width: 0;
+    flex: 1;
+}
+
+.market-item-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.market-item-desc {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: var(--color-muted);
+}
+
+.market-item-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--color-muted);
+}
+
+.market-item-meta:empty {
+    display: none;
+}
+
+.market-item-meta i {
+    margin-right: 4px;
+}
+
+.item-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.icon-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    background: transparent;
+    color: var(--color-text);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 1rem;
+}
+
+.icon-action:hover:not(:disabled) {
+    background: var(--color-surface-3);
+    border-color: var(--color-border);
+}
+
+.icon-action.danger:hover:not(:disabled) {
+    color: var(--color-danger);
+}
+
+.icon-action.done,
+.icon-action:disabled {
+    color: var(--color-success);
+    cursor: default;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-dot.on { background: var(--color-success); }
+.status-dot.off { background: var(--color-muted); }
+
+/* ==========================================================
+   Toggle switch
+   ========================================================== */
+
+.switch {
+    position: relative;
+    width: 38px;
+    height: 22px;
+    padding: 0;
+    background: var(--color-surface-3);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+}
+
+.switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--color-muted);
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.switch.on {
+    background: var(--color-primary-light);
+    border-color: var(--color-primary);
+}
+
+.switch.on::after {
+    transform: translateX(16px);
+    background: var(--color-primary);
+}
+
+/* ==========================================================
+   Action stack under Installed lists
+   ========================================================== */
+
+.action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.btn-wide {
+    width: 100%;
+    padding: 10px 16px;
+    background: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.btn-wide:hover {
+    background: var(--color-surface-3);
+}
+
+.btn-wide-primary {
+    background: var(--color-primary);
+    border-color: var(--color-primary);
+    color: #fff;
+}
+
+.btn-wide-primary:hover {
+    background: var(--color-primary-hover);
+}
+
+.btn-wide i {
+    margin-right: 8px;
+}
+
+.link-button {
+    align-self: center;
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    color: var(--color-primary);
+    font-weight: 500;
+}
+
+.link-button:hover {
+    text-decoration: underline;
+}
+
+.link-button i {
+    margin-right: 6px;
+}
+
+.inline-form {
+    padding: 14px;
+    background: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.inline-form[hidden] {
+    display: none;
+}
+
+.inline-form > label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--color-muted);
+}
+
+.inline-form .form-group:last-of-type {
+    margin-bottom: 12px;
+}
+
+.inline-form input,
+.inline-form select {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.inline-form .form-row input {
+    width: auto;
+}
+
+/* ==========================================================
+   Badges
+   ========================================================== */
+
+.mcp-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--color-surface-3);
+    color: var(--color-text);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.mcp-badge.status-active {
+    background: rgba(16, 124, 16, 0.18);
+    color: var(--color-success);
+}
+
+.skill-badge-saved { background-color: #0e7490; }
+
+[hidden] {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .market-item {
+        padding: 12px;
+        gap: 10px;
+    }
+
+    .modal-content {
+        padding: 16px;
+    }
+
+    .toast-host {
+        left: 16px;
+        right: 16px;
+        max-width: none;
+    }
+}
+
+
+/* ==========================================================
+   Settings general block + checkbox fix
+   ========================================================== */
+
+.form-group input[type="checkbox"],
+.settings-general input[type="checkbox"] {
+    width: auto;
+    padding: 0;
+    margin: 0;
+    accent-color: var(--color-primary);
+}
+
+.check-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--color-text);
+    cursor: pointer;
+}
+
+.form-group label:has(> input[type="checkbox"]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text);
+}
+
+.settings-general {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    margin-bottom: 8px;
+}
+
+.inline-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--color-muted);
+}
+
+.inline-field input {
+    width: 84px;
+    padding: 8px 10px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+}
+
+.settings-save {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+}
+
+.settings-save .llm-status {
+    margin: 0;
 }

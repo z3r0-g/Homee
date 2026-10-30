@@ -124,13 +124,11 @@ Homee works out of the box with local Ollama. No cloud account needed:
 
 MCP service (port 5002)
 ```bash
-cd /home/z3r0/Server
 source venv/bin/activate
 python -m MCP.app
 ```
 UI service (port 5001)
 ```bash
-cd /home/z3r0/Server
 source venv/bin/activate
 python -m UI.app
 ```

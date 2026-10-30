@@ -1,115 +1,222 @@
-// Bot UI Application Logic
+'use strict';
 
 const API_BASE = '';
-let globalBots = [];
-let currentBotId = null;
-let currentSettings = null;
-let chatModelChoice = 'fast'; // 'fast' (primary) | 'smart' (secondary)
-let attachedFile = null; // { name, content } for the open chat view only
-const botBusy = {}; // botId -> in-flight op count
+const MAX_ATTACH_CHARS = 100000;
+
+const state = {
+    bots: [],
+    currentBotId: null,
+    settings: null,
+    chatModel: 'fast',
+    attachedFile: null,
+    busy: {},
+    mode: 'local_local',
+    models: { catalog: null, installed: [], primary: '', secondary: '', filter: 'all' },
+    skills: { installed: [], market: [], marketMeta: {}, filter: 'all', marketLoaded: false },
+    mcps: { installed: [], market: [], filter: 'all', marketLoaded: false },
+};
+
+const $ = (id) => document.getElementById(id);
+const isMobile = () => window.matchMedia('(max-width: 768px)').matches;
+
+const botList = $('botList');
+const chatArea = $('chatArea');
+const newBotBtn = $('newBotBtn');
+const settingsBtn = $('settingsBtn');
+const settingsModal = $('settingsModal');
+const newBotModal = $('newBotModal');
+const editBotModal = $('editBotModal');
+const skillModal = $('skillModal');
+const pullModal = $('pullModal');
+const headerActions = $('headerActions');
+const llmStatusPill = $('llmStatusPill');
+const mcpStatusPill = $('mcpStatusPill');
+const skillsPill = $('skillsPill');
+const sidebarToggleBtn = $('sidebarToggleBtn');
+const sidebarOverlay = $('sidebarOverlay');
+const sidebarEl = $('sidebar');
+const modeOptions = $('modeOptions');
+
+const MARKET = {
+    skills: { list: 'skillMarketList', chips: 'skillMarketChips', search: 'skillMarketSearch', note: 'skillMarketNote' },
+    mcps: { list: 'mcpMarketList', chips: 'mcpMarketChips', search: 'mcpMarketSearch', note: 'mcpMarketNote' },
+};
+
+/* ── Helpers ─────────────────────────────────────────────────────── */
+
+function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
+
+async function fetchJson(url, options) {
+    try {
+        const res = await fetch(`${API_BASE}${url}`, options);
+        let data = {};
+        try { data = await res.json(); } catch (_) { /* non-JSON body */ }
+        return { ok: res.ok, status: res.status, data };
+    } catch (err) {
+        return { ok: false, status: 0, data: { error: err.message } };
+    }
+}
+
+function sendJson(method, url, body) {
+    return fetchJson(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+    });
+}
+const postJson = (url, body) => sendJson('POST', url, body);
 
 function formatElapsed(ms) {
-    const totalSeconds = Math.max(0, Math.round(ms / 1000));
-    if (totalSeconds < 60) {
-        return `${totalSeconds}s`;
-    }
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}m ${seconds}s`;
+    const total = Math.max(0, Math.round(ms / 1000));
+    if (total < 60) return `${total}s`;
+    return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
-// DOM Elements
-const botList = document.getElementById('botList');
-const chatArea = document.getElementById('chatArea');
-const newBotBtn = document.getElementById('newBotBtn');
-const settingsBtn = document.getElementById('settingsBtn');
-const skillModal = document.getElementById('skillModal');
-const settingsModal = document.getElementById('settingsModal');
-const newBotModal = document.getElementById('newBotModal');
-const closeModalBtns = document.querySelectorAll('.close-modal');
-const skillForm = document.getElementById('skillForm');
-const newBotForm = document.getElementById('newBotForm');
-const settingsForm = document.getElementById('settingsForm');
-const tabBtns = document.querySelectorAll('.tab-btn');
-const tabContents = document.querySelectorAll('.tab-content');
-const modeOptions = document.getElementById('modeOptions');
-const settings_llmMode = document.querySelector('input[name="llmMode"]');
-
-// Initialize
-async function init() {
-    await loadBots();
-    await loadSkillsForNewBot();
-    await loadSettings();
-    setupTabNavigation();
-    renderModeSelector();
-    await initMCPAndSkills();
-    // Set initial sidebar state on mobile (collapsed by default).
-    if (window.innerWidth <= 768) {
-        toggleSidebar(false);
-    }
-    // Refresh header status pills (LLM status loads immediately below).
-    loadMcpStatus();
+function debounce(fn, wait) {
+    let timer = null;
+    return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), wait);
+    };
 }
 
-// Load bots from API
-async function loadBots() {
-    try {
-        const response = await fetch(`${API_BASE}/api/bots`);
-        const data = await response.json();
-        globalBots = data.bots || data || [];
-        renderBotList(globalBots);
-    } catch (e) {
-        console.warn('Failed to load bots', e);
-        botList.innerHTML = '<p class="empty" style="padding: 20px;">Failed to load bots.</p>';
-    }
+function setStatus(el, text, ok) {
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'llm-status' + (ok === true ? ' status-ok' : ok === false ? ' status-bad' : '');
 }
 
-// Render bot list
-function renderBotList(bots) {
-    if (bots.length === 0) {
-        botList.innerHTML = '<p class="empty" style="padding: 20px;">No bots yet. Create a new bot to get started.</p>';
-        chatArea.innerHTML = '<div class="empty">Start by creating a new bot</div>';
-        return;
-    }
-    botList.innerHTML = bots.map(bot => `
-        <div class="bot-item${botBusy[bot.id] ? ' working' : ''}" data-testid="bot-item" data-bot-id="${bot.id}" data-bot-name="${bot.name}">
-            <span style="font-weight: 500;">${bot.name}</span>
-            <span class="bot-status">${botBusy[bot.id] ? 'working' : bot.status}</span>
-        </div>
-    `).join('');
+function setPill(pill, text, level) {
+    if (!pill) return;
+    pill.className = `header-status ${level}`;
+    pill.innerHTML = `<i class="fa-solid ${pill.dataset.icon || 'fa-circle'}" aria-hidden="true"></i><span>${escapeHtml(text)}</span>`;
+}
 
-    document.querySelectorAll('.bot-item').forEach(item => {
-        item.addEventListener('click', () => openBotChat(item.dataset.botId));
+function toast(message, type = 'info', ms = 3500) {
+    let host = $('toastHost');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'toastHost';
+        host.className = 'toast-host';
+        document.body.appendChild(host);
+    }
+    const icons = { info: 'fa-circle-info', success: 'fa-circle-check', error: 'fa-circle-exclamation' };
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    el.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}" aria-hidden="true"></i><span>${escapeHtml(message)}</span>`;
+    host.appendChild(el);
+    setTimeout(() => {
+        el.classList.add('leaving');
+        setTimeout(() => el.remove(), 200);
+    }, ms);
+}
+
+let lastFocused = null;
+
+function openModal(modal) {
+    if (!modal) return;
+    lastFocused = document.activeElement;
+    modal.classList.add('active');
+    const content = modal.querySelector('.modal-content');
+    const field = modal.querySelector('input[type="text"], textarea');
+    if (field && modal !== settingsModal) field.focus();
+    else if (content) { content.setAttribute('tabindex', '-1'); content.focus({ preventScroll: true }); }
+}
+
+function closeModal(modal) {
+    if (!modal) return;
+    modal.classList.remove('active');
+    if (lastFocused && lastFocused.isConnected) lastFocused.focus();
+}
+
+function makeKeyboardClickable(el, handler) {
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handler(e);
+        }
     });
 }
 
+/* ── Sidebar drawer (mobile) ─────────────────────────────────────── */
 
-// Per-bot working state: a bot with an in-flight chat or task shows
-// "working" in the sidebar until its op settles, even while the user
-// chats with another bot. Server status is never rewritten: this is
-// purely the session's view of what it started, so a stale "working"
-// can never survive a reload. renderBotList re-applies it on refresh.
-function setBotBusy(botId, busy) {
-    botBusy[botId] = Math.max(0, (botBusy[botId] || 0) + (busy ? 1 : -1));
-    const item = document.querySelector(`.bot-item[data-bot-id="${botId}"]`);
-    if (!item) return;
-    const statusEl = item.querySelector('.bot-status');
-    const bot = globalBots.find(b => b.id === botId);
-    item.classList.toggle('working', !!botBusy[botId]);
-    if (statusEl) statusEl.textContent = botBusy[botId] ? 'working' : (bot ? bot.status : 'idle');
+function toggleSidebar(open) {
+    const isOpen = open !== false && isMobile();
+    if (sidebarToggleBtn) sidebarToggleBtn.setAttribute('aria-expanded', String(isOpen));
+    if (sidebarEl) sidebarEl.classList.toggle('mobile-expanded', isOpen);
+    if (sidebarOverlay) sidebarOverlay.classList.toggle('active', isOpen);
 }
 
-// Skill label for the bot-info bar: prefer the saved-skill
-// name from the new-bot dropdown; skill-direct ids (short names) show
-// in full, long uuid-like ids fall back to the old 8-char prefix.
-function resolveSkillName(personalityId) {
-    if (!personalityId) return 'none';
-    const select = document.getElementById('newBotSkill');
-    if (select) {
-        const opt = [...select.options].find(o => o.value === personalityId);
-        if (opt && opt.text !== '(none)') return opt.text;
+sidebarToggleBtn?.addEventListener('click', () => toggleSidebar(!sidebarEl.classList.contains('mobile-expanded')));
+sidebarOverlay?.addEventListener('click', () => toggleSidebar(false));
+$('sidebarCloseBtn')?.addEventListener('click', () => toggleSidebar(false));
+
+/* ── Bots: sidebar ───────────────────────────────────────────────── */
+
+function renderBotList() {
+    if (!state.bots.length) {
+        botList.innerHTML = '<p class="empty empty-pad">No bots yet. Create a new bot to get started.</p>';
+        return;
     }
-    return personalityId.length > 20 ? personalityId.substring(0, 8) : personalityId;
+    botList.innerHTML = state.bots.map(bot => {
+        const busy = !!state.busy[bot.id];
+        return `
+        <div class="bot-item${busy ? ' working' : ''}${bot.id === state.currentBotId ? ' active' : ''}" role="button" tabindex="0"
+             data-testid="bot-item" data-bot-id="${escapeHtml(bot.id)}" data-bot-name="${escapeHtml(bot.name)}">
+            <span class="bot-name"><i class="fa-solid fa-robot" aria-hidden="true"></i> ${escapeHtml(bot.name)}</span>
+            <span class="bot-status">${busy ? 'working' : escapeHtml(bot.status || 'idle')}</span>
+        </div>`;
+    }).join('');
+}
+
+botList.addEventListener('click', (e) => {
+    const item = e.target.closest('.bot-item');
+    if (item) openBotChat(item.dataset.botId);
+});
+botList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const item = e.target.closest('.bot-item');
+    if (item) {
+        e.preventDefault();
+        openBotChat(item.dataset.botId);
+    }
+});
+
+async function loadBots() {
+    const { ok, data } = await fetchJson('/api/bots');
+    if (!ok) {
+        botList.innerHTML = '<p class="empty empty-pad">Failed to load bots.</p>';
+        return;
+    }
+    state.bots = data.bots || data || [];
+    renderBotList();
+    if (!state.bots.length) {
+        state.currentBotId = null;
+        chatArea.innerHTML = '<div class="empty">Start by creating a new bot</div>';
+    }
+}
+
+function setBotBusy(botId, busy) {
+    state.busy[botId] = Math.max(0, (state.busy[botId] || 0) + (busy ? 1 : -1));
+    const item = botList.querySelector(`.bot-item[data-bot-id="${CSS.escape(botId)}"]`);
+    if (!item) return;
+    const bot = state.bots.find(b => b.id === botId);
+    item.classList.toggle('working', !!state.busy[botId]);
+    const statusEl = item.querySelector('.bot-status');
+    if (statusEl) statusEl.textContent = state.busy[botId] ? 'working' : (bot ? bot.status : 'idle');
+}
+
+function resolveSkillName(skillId) {
+    if (!skillId) return 'none';
+    const select = $('newBotSkill');
+    const option = select && [...select.options].find(o => o.value === skillId);
+    if (option && option.text !== '(none)') return option.text;
+    return skillId.length > 20 ? skillId.substring(0, 8) : skillId;
 }
 
 function scheduleLabel(cfg) {
@@ -119,45 +226,39 @@ function scheduleLabel(cfg) {
     return 'No schedule';
 }
 
-// Shared by openBotChat and background-task completion: re-rendering a
-// bot's history from the server is what makes a finished background
-// reply appear without another click.
+/* ── Bots: chat view ─────────────────────────────────────────────── */
+
 function renderChatHistory(history, historyDiv) {
     historyDiv.innerHTML = '';
     history.forEach((msg, idx) => {
-        const msgDiv = document.createElement('div');
         const isUser = msg.role === 'user';
-        msgDiv.className = `message ${isUser ? 'message-user' : 'bot'}`;
+        const div = document.createElement('div');
+        div.className = `message ${isUser ? 'message-user' : 'bot'}`;
 
-        const timeLabel = msg.timestamp ? ` <span class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>` : '';
-        let elapsedLabel = '';
-        if (!isUser && idx > 0 && history[idx - 1].role === 'user' && history[idx - 1].timestamp && msg.timestamp) {
-            const ms = new Date(msg.timestamp) - new Date(history[idx - 1].timestamp);
-            elapsedLabel = ` <span class="message-time">⏱ ${formatElapsed(ms)}</span>`;
+        const time = msg.timestamp ? `<span class="message-time">${new Date(msg.timestamp).toLocaleTimeString()}</span>` : '';
+        let elapsed = '';
+        const prev = history[idx - 1];
+        if (!isUser && prev && prev.role === 'user' && prev.timestamp && msg.timestamp) {
+            elapsed = ` <span class="message-time"><i class="fa-regular fa-clock" aria-hidden="true"></i> ${formatElapsed(new Date(msg.timestamp) - new Date(prev.timestamp))}</span>`;
         }
 
-        msgDiv.innerHTML = `
+        div.innerHTML = `
             <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
             <div class="message-content">${isUser ? escapeHtml(msg.content) : formatAssistantMessage(msg.content)}</div>
-            <div>${timeLabel}${elapsedLabel}</div>
-        `;
-        historyDiv.appendChild(msgDiv);
+            <div>${time}${elapsed}</div>`;
+        historyDiv.appendChild(div);
     });
+    historyDiv.scrollTop = historyDiv.scrollHeight;
 }
 
 function appendWorkingRow(historyDiv) {
     const row = document.createElement('div');
     row.className = 'message bot';
-    row.innerHTML = `
-        <div class="message-label">Bot</div>
-        <div class="message-content">Working…</div>
-    `;
+    row.innerHTML = '<div class="message-label">Bot</div><div class="message-content">Working…</div>';
     historyDiv.appendChild(row);
     historyDiv.scrollTop = historyDiv.scrollHeight;
 }
 
-// Empty-chat suggestions: at most two chips, no config UI. The bot's
-// task prompt (if it has one) plus a capabilities question.
 function appendStarterPrompts(bot) {
     const chips = [];
     const taskPrompt = (bot.config && bot.config.task_prompt) || '';
@@ -165,7 +266,9 @@ function appendStarterPrompts(bot) {
     chips.push('What can you do?');
     const wrap = document.createElement('div');
     wrap.className = 'starter-prompts';
-    wrap.innerHTML = chips.map(text => `<button type="button" class="starter-chip" title="${escapeHtml(text)}">${escapeHtml(text.length > 48 ? text.substring(0, 48) + '…' : text)}</button>`).join('');
+    wrap.innerHTML = chips.map(text =>
+        `<button type="button" class="starter-chip" title="${escapeHtml(text)}">${escapeHtml(text.length > 48 ? text.substring(0, 48) + '…' : text)}</button>`
+    ).join('');
     wrap.querySelectorAll('.starter-chip').forEach((btn, i) => {
         btn.addEventListener('click', () => sendMessageText(bot.id, chips[i]));
     });
@@ -173,20 +276,15 @@ function appendStarterPrompts(bot) {
 }
 
 async function refreshChatHistory(botId) {
-    if (currentBotId !== botId) return;
-    const historyDiv = document.getElementById('chatHistory');
+    if (state.currentBotId !== botId) return;
+    const historyDiv = $('chatHistory');
     if (!historyDiv) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`);
-        if (!response.ok) return;
-        const bot = await response.json();
-        renderChatHistory(bot.conversation_history || [], historyDiv);
-        if (botBusy[botId]) appendWorkingRow(historyDiv);
-        const gbot = globalBots.find(b => b.id === botId);
-        if (gbot) gbot.conversation_history = bot.conversation_history;
-    } catch (e) {
-        console.warn('Failed to refresh chat history', e);
-    }
+    const { ok, data } = await fetchJson(`/api/bots/${encodeURIComponent(botId)}`);
+    if (!ok) return;
+    renderChatHistory(data.conversation_history || [], historyDiv);
+    if (state.busy[botId]) appendWorkingRow(historyDiv);
+    const cached = state.bots.find(b => b.id === botId);
+    if (cached) cached.conversation_history = data.conversation_history;
 }
 
 function reenableComposer() {
@@ -194,25 +292,17 @@ function reenableComposer() {
     if (!composer) return;
     const send = composer.querySelector('.btn-save');
     if (send) send.disabled = false;
-    const runBtn = document.getElementById('runTaskBtn');
+    const runBtn = $('runTaskBtn');
     if (runBtn) runBtn.disabled = false;
-    const input = document.getElementById('userMessage');
+    const input = $('userMessage');
     if (input) input.disabled = false;
 }
 
-// Fast sends no model (server default = primary). Smart sends the
-// configured secondary model name; without one the Smart button is
-// disabled at render, so this never fires unconfigured.
 function chatModelForSend() {
-    const llm = (currentSettings && currentSettings.llm) || {};
-    if (chatModelChoice === 'smart' && llm.secondary_model) return llm.secondary_model;
-    return null;
+    const llm = (state.settings && state.settings.llm) || {};
+    return state.chatModel === 'smart' && llm.secondary_model ? llm.secondary_model : null;
 }
 
-// Shared settle path for chat sends: clear the timer + busy flag,
-// re-enable the live composer, refresh the history if the user came
-// back to this bot mid-run (their thinking row is detached by then),
-// then refresh the sidebar so "working" clears.
 async function settleSend(botId, thinkingDiv, input, timer) {
     clearInterval(timer);
     setBotBusy(botId, false);
@@ -220,231 +310,121 @@ async function settleSend(botId, thinkingDiv, input, timer) {
         input.disabled = false;
         input.focus();
     }
-    if (currentBotId === botId) {
+    if (state.currentBotId === botId) {
         reenableComposer();
         if (!thinkingDiv.isConnected) await refreshChatHistory(botId);
     }
     await loadBots();
 }
 
-// Load skills for the new-bot dropdown
-async function loadSkillsForNewBot() {
-    try {
-        const response = await fetch(`${API_BASE}/api/skills/available`);
-        if (!response.ok) {
-            throw new Error('Server responded with ' + response.status);
-        }
-        const data = await response.json();
-        const select = document.getElementById('newBotSkill');
-        if (select) {
-            select.innerHTML = '<option value="">(none)</option>' +
-                (data.skills || []).map(p =>
-                    `<option value="${p.id}">${p.name}</option>`
-                ).join('');
-            const editSelect = document.getElementById('editBotSkill');
-            if (editSelect) editSelect.innerHTML = select.innerHTML;
-        }
-    } catch (e) {
-        console.warn('Failed to load available skills', e);
-        const select = document.getElementById('newBotSkill');
-        if (select) {
-            select.innerHTML = '<option value="">(none)</option>' +
-                '<option value="demo">Demo Mode</option>' +
-                '<option value="general">General</option>';
-            const editSelect = document.getElementById('editBotSkill');
-            if (editSelect) editSelect.innerHTML = select.innerHTML;
-        }
-    }
+function restorePills() {
+    [llmStatusPill, mcpStatusPill, skillsPill].forEach(pill => {
+        if (pill && headerActions && pill.parentElement !== headerActions) headerActions.appendChild(pill);
+    });
 }
 
-// Disable bot API
-async function disableBot(botId) {
-    if (!confirm('Are you sure you want to disable this bot?')) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: false })
-        });
-        if (response.ok) {
-            const bot = globalBots.find(b => b.id === botId);
-            if (bot) {
-                bot.config.enabled = false;
-                openBotChat(botId);
-            }
-        } else {
-            console.warn('Failed to disable bot', response);
-        }
-    } catch (e) {
-        console.warn('Error disabling bot', e);
-    }
+function placePills(composer) {
+    if (!isMobile()) return;
+    [llmStatusPill, mcpStatusPill, skillsPill].forEach(pill => pill && composer.appendChild(pill));
 }
 
-// Delete bot API (only when bot is disabled)
-async function deleteBot(botId) {
-    if (!confirm('Are you sure you want to delete this bot? This action cannot be undone.')) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
-            method: 'DELETE'
-        });
-        if (response.ok) {
-            const botItem = document.querySelector(`[data-bot-id="${botId}"]`);
-            if (botItem) botItem.remove();
-            if (document.getElementById('chatArea').children[0]?.className === 'bot-info' && 
-                document.getElementById('chatArea').children[0].getAttribute('data-bot-id') === botId) {
-                chatArea.innerHTML = '';
-                currentBotId = null;
-            }
-        } else {
-            console.warn('Failed to delete bot', response);
-        }
-    } catch (e) {
-        console.warn('Error deleting bot', e);
-    }
+function healthLine(health) {
+    const { disk, memory, cpu } = health || {};
+    if (!disk || !memory || !cpu) return '';
+    return `<strong>Server Health:</strong><br>
+        Disk: ${disk.free_gb}GB free of ${disk.total_gb}GB (${disk.usage_percent}% used)<br>
+        Memory: ${memory.free_gb}GB free of ${memory.total_gb}GB (${memory.usage_percent}% used)<br>
+        CPU: ${cpu.percent}%`;
 }
 
-// Enable bot API
-async function enableBot(botId) {
-    if (!confirm('Are you sure you want to enable this bot?')) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ enabled: true })
-        });
-        if (response.ok) {
-            const bot = globalBots.find(b => b.id === botId);
-            if (bot) {
-                bot.config.enabled = true;
-                openBotChat(botId); // Re-open chat to show Disable button
-            }
-        } else {
-            console.warn('Failed to enable bot', response);
-        }
-    } catch (e) {
-        console.warn('Error enabling bot', e);
-    }
-}
-
-// Open bot chat
 async function openBotChat(botId) {
-    const bot = globalBots.find(b => b.id === botId);
+    const bot = state.bots.find(b => b.id === botId);
     if (!bot) return;
-    // Close the mobile sidebar so focus returns to the chat view,
-    // mirroring how Settings / New Bot / pills dismiss the drawer.
     toggleSidebar(false);
-    currentBotId = botId;
-    attachedFile = null;
-
-    // Display name: add "Bot" suffix unless name already ends in "Bot" or "bot"
-    const name = bot.name;
-    const displayName = name.match(/bot$/i) ? name : `${name} Bot`;
-    const chatStatus = document.querySelector('.chat-status');
-    if (chatStatus) chatStatus.textContent = displayName;
-    // The sidebar already styles .bot-item.active — mark the open bot.
-    document.querySelectorAll('.bot-item').forEach(item => {
+    state.currentBotId = botId;
+    state.attachedFile = null;
+    restorePills();
+    botList.querySelectorAll('.bot-item').forEach(item => {
         item.classList.toggle('active', item.dataset.botId === botId);
     });
 
-    // Fetch server health
-    let healthHtml = "";
-    try {
-        const healthResponse = await fetch(`${API_BASE}/api/server-health`);
-        if (healthResponse.ok) {
-            const health = await healthResponse.json();
-            const disk = health.disk;
-            const memory = health.memory;
-            const cpu = health.cpu;
-            healthHtml = `
-                <div class="bot-health-small">
-                    <strong>Server Health:</strong><br>
-                    Disk: ${disk.free_gb}GB free of ${disk.total_gb}GB (${disk.usage_percent}% used)<br>
-                    Memory: ${memory.free_gb}GB free of ${memory.total_gb}GB (${memory.usage_percent}% used)<br>
-                    CPU: ${cpu.percent}%
-                </div>
-            `;
-        }
-    } catch (e) {
-        console.warn('Failed to load server health', e);
-    }
-
     chatArea.innerHTML = '';
+    const cfg = bot.config || {};
 
     const infoDiv = document.createElement('div');
     infoDiv.className = 'bot-info';
     infoDiv.dataset.botId = bot.id;
-    const cfg = bot.config || {};
-    const barActions = cfg.enabled
-        ? `<button type="button" class="btn-secondary small" data-bot-action="edit" data-bot-id="${bot.id}">Edit</button> <button type="button" class="btn-secondary small" data-bot-action="disable" data-bot-id="${bot.id}">DISABLE</button>`
-        : `<button type="button" class="btn-secondary small" data-bot-action="delete" data-bot-id="${bot.id}">Delete</button> <button type="button" class="btn-secondary small" data-bot-action="enable" data-bot-id="${bot.id}">Re-Enable</button>`;
-    infoDiv.innerHTML = `<span class="bot-meta">Skill: ${escapeHtml(resolveSkillName(bot.skill_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never')} · Runs: ${cfg.run_count || 0}</span>${healthHtml} <div class="bot-actions">${barActions}</div>`;
+    const actions = cfg.enabled
+        ? [['edit', 'fa-pen', 'Edit'], ['disable', 'fa-ban', 'DISABLE']]
+        : [['delete', 'fa-trash', 'Delete'], ['enable', 'fa-rotate-left', 'Re-Enable']];
+    const actionsHtml = actions.map(([action, icon, label]) =>
+        `<button type="button" class="btn-secondary small" data-bot-action="${action}" data-bot-id="${escapeHtml(bot.id)}"><i class="fa-solid ${icon}" aria-hidden="true"></i> ${label}</button>`
+    ).join(' ');
+    const lastRun = cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never';
+    infoDiv.innerHTML = `
+        <span class="bot-meta">Skill: ${escapeHtml(resolveSkillName(bot.skill_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(lastRun)} · Runs: ${cfg.run_count || 0}</span>
+        <div class="bot-health-small" id="botHealth"></div>
+        <div class="bot-actions">${actionsHtml}</div>`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
     historyDiv.id = 'chatHistory';
     historyDiv.className = 'chat-history';
     chatArea.appendChild(historyDiv);
-
     renderChatHistory(bot.conversation_history || [], historyDiv);
-    if (botBusy[botId]) appendWorkingRow(historyDiv);
+    if (state.busy[botId]) appendWorkingRow(historyDiv);
     if (!(bot.conversation_history || []).length) appendStarterPrompts(bot);
 
-    const formDiv = document.createElement('div');
-    formDiv.className = 'chat-composer';
-    const llm = (currentSettings && currentSettings.llm) || {};
+    const llm = (state.settings && state.settings.llm) || {};
     const smartAvailable = !!llm.secondary_model;
-    const switchHtml = llm.local_model ? `<div class="model-switch" role="group" aria-label="Model">
-        <button type="button" data-model-choice="fast" class="${chatModelChoice === 'fast' ? 'active' : ''}">Fast</button>
-        <button type="button" data-model-choice="smart" class="${chatModelChoice === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled title="Set a secondary model in Settings to enable Smart"'}>Smart</button>
-    </div>` : '';
-    formDiv.innerHTML = `
-        <input type="text" id="userMessage" class="chat-input" placeholder="Type a message..." />
-        ${switchHtml}
-        <button type="button" class="btn-secondary small" id="attachFileBtn" title="Attach a text file" aria-label="Attach a file">📎</button>
-        <button class="btn-save">Send</button>
-        <button id="runTaskBtn" class="btn-run-task">Run Task</button>
-    `;
-    chatArea.appendChild(formDiv);
+    const switchHtml = llm.local_model ? `
+        <div class="model-switch" role="group" aria-label="Model">
+            <button type="button" data-model-choice="fast" class="${state.chatModel === 'fast' ? 'active' : ''}">Fast</button>
+            <button type="button" data-model-choice="smart" class="${state.chatModel === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled title="Set a secondary model in Settings to enable Smart"'}>Smart</button>
+        </div>` : '';
 
-    const input = document.getElementById('userMessage');
-    const composerBusy = !!botBusy[botId];
-    input.disabled = composerBusy;
-    if (composerBusy) {
-        formDiv.querySelector('.btn-save').disabled = true;
-        document.getElementById('runTaskBtn').disabled = true;
+    const composer = document.createElement('div');
+    composer.className = 'chat-composer';
+    composer.innerHTML = `
+        <input type="text" id="userMessage" class="chat-input" placeholder="Type a message…" aria-label="Message" autocomplete="off" />
+        ${switchHtml}
+        <button type="button" class="btn-secondary small" id="attachFileBtn" title="Attach a text file" aria-label="Attach a file"><i class="fa-solid fa-paperclip" aria-hidden="true"></i></button>
+        <button type="button" class="btn-save"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send</button>
+        <button type="button" id="runTaskBtn" class="btn-run-task"><i class="fa-solid fa-play" aria-hidden="true"></i> Run Task</button>`;
+    chatArea.appendChild(composer);
+
+    const input = $('userMessage');
+    const sendBtn = composer.querySelector('.btn-save');
+    const runBtn = $('runTaskBtn');
+    if (state.busy[botId]) {
+        input.disabled = true;
+        sendBtn.disabled = true;
+        runBtn.disabled = true;
     } else {
         input.focus();
     }
 
-    formDiv.querySelectorAll('[data-model-choice]').forEach(btn => btn.addEventListener('click', () => {
-        chatModelChoice = btn.dataset.modelChoice;
-        formDiv.querySelectorAll('[data-model-choice]').forEach(b => b.classList.toggle('active', b === btn));
+    composer.querySelectorAll('[data-model-choice]').forEach(btn => btn.addEventListener('click', () => {
+        state.chatModel = btn.dataset.modelChoice;
+        composer.querySelectorAll('[data-model-choice]').forEach(b => b.classList.toggle('active', b === btn));
     }));
-
-    const attachBtn = document.getElementById('attachFileBtn');
-    if (attachBtn) attachBtn.addEventListener('click', () => {
-        const fileInput = document.getElementById('fileAttachInput');
-        if (fileInput) fileInput.click();
+    $('attachFileBtn').addEventListener('click', () => $('fileAttachInput')?.click());
+    sendBtn.addEventListener('click', () => sendMessage(input, botId));
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            sendMessage(input, botId);
+        }
     });
+    runBtn.addEventListener('click', () => runBotTask(botId));
+    placePills(composer);
 
-    formDiv.querySelector('.btn-save').addEventListener('click', () => sendMessage(input, botId));
-    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(input, botId); });
-
-    document.getElementById('runTaskBtn').addEventListener('click', () => runBotTask(botId));
-
-    // On mobile, relocate the status pills from the header into the
-    // composer — to the right of the Run Task button — so they stay
-    // accessible without a separate header row. appendChild moves the
-    // existing nodes (event listeners preserved); loadLlmStatus /
-    // loadMcpStatus use getElementById so they still find the pills.
-    if (window.innerWidth <= 768) {
-        if (llmStatusPill) formDiv.appendChild(llmStatusPill);
-        if (mcpStatusPill) formDiv.appendChild(mcpStatusPill);
-        if (skillsPill) formDiv.appendChild(skillsPill);
-    }
+    fetchJson('/api/server-health').then(({ ok, data }) => {
+        const el = $('botHealth');
+        if (ok && el && state.currentBotId === botId) el.innerHTML = healthLine(data);
+    });
 }
 
-// Send message to bot
 async function sendMessage(input, botId) {
     const message = input.value.trim();
     if (!message) return;
@@ -452,34 +432,25 @@ async function sendMessage(input, botId) {
     await sendMessageText(botId, message, input);
 }
 
-// Core send path shared by the composer and starter chips: one in-flight
-// op per bot. The fetch is never aborted on bot switch — it keeps
-// running, the sidebar shows "working", and completion lands wherever
-// the user is (in place, or via a history refresh on return).
 async function sendMessageText(botId, message, input) {
-    if (botBusy[botId]) return;
-    const historyDiv = document.getElementById('chatHistory');
+    if (state.busy[botId]) return;
+    const historyDiv = $('chatHistory');
     if (!historyDiv) return;
     if (input) input.disabled = true;
     document.querySelector('.starter-prompts')?.remove();
 
     const sentAt = new Date();
-
     const userDiv = document.createElement('div');
     userDiv.className = 'message message-user';
     userDiv.innerHTML = `
         <div class="message-label">You</div>
         <div class="message-content">${escapeHtml(message)}</div>
-        <div class="message-time">${sentAt.toLocaleTimeString()}</div>
-    `;
+        <div class="message-time">${sentAt.toLocaleTimeString()}</div>`;
     historyDiv.appendChild(userDiv);
 
     const thinkingDiv = document.createElement('div');
     thinkingDiv.className = 'message bot';
-    thinkingDiv.innerHTML = `
-        <div class="message-label">Bot</div>
-        <div class="message-content"><span class="elapsed-timer">0s …</span></div>
-    `;
+    thinkingDiv.innerHTML = '<div class="message-label">Bot</div><div class="message-content"><span class="elapsed-timer">0s …</span></div>';
     historyDiv.appendChild(thinkingDiv);
     historyDiv.scrollTop = historyDiv.scrollHeight;
 
@@ -489,509 +460,294 @@ async function sendMessageText(botId, message, input) {
     }, 1000);
 
     setBotBusy(botId, true);
-    try {
-        const body = { message };
-        if (attachedFile) body.attachments = [{ name: attachedFile.name, content: attachedFile.content }];
-        const model = chatModelForSend();
-        if (model) body.model = model;
-        const response = await fetch(`${API_BASE}/api/bots/${botId}/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+    const body = { message };
+    if (state.attachedFile) body.attachments = [{ name: state.attachedFile.name, content: state.attachedFile.content }];
+    const model = chatModelForSend();
+    if (model) body.model = model;
 
-        const data = await response.json();
-        if (data.error) {
-            if (thinkingDiv.isConnected) thinkingDiv.querySelector('.message-content').textContent = data.error;
-        } else if (thinkingDiv.isConnected) {
+    const { ok, status, data } = await postJson(`/api/bots/${encodeURIComponent(botId)}/chat`, body);
+    if (thinkingDiv.isConnected) {
+        const content = thinkingDiv.querySelector('.message-content');
+        if (!ok || data.error) {
+            content.textContent = data.error || `Request failed (${status || 'network error'})`;
+        } else {
             const receivedAt = new Date();
-            const elapsed = receivedAt - sentAt;
-            thinkingDiv.querySelector('.message-content').innerHTML = `
+            content.innerHTML = `
                 ${formatAssistantMessage(data.response)}
                 <span class="message-time">${receivedAt.toLocaleTimeString()}</span>
-                <span class="message-time">⏱ ${formatElapsed(elapsed)}</span>
-            `;
-            historyDiv.scrollTop = historyDiv.scrollHeight;
+                <span class="message-time"><i class="fa-regular fa-clock" aria-hidden="true"></i> ${formatElapsed(receivedAt - sentAt)}</span>`;
         }
-        await settleSend(botId, thinkingDiv, input, timer);
-    } catch (err) {
-        if (thinkingDiv.isConnected) thinkingDiv.querySelector('.message-content').textContent = `Error: ${err.message}`;
-        await settleSend(botId, thinkingDiv, input, timer);
+        historyDiv.scrollTop = historyDiv.scrollHeight;
     }
+    await settleSend(botId, thinkingDiv, input, timer);
 }
 
-// Run bot's scheduled task. Like chat, it keeps running if the user
-// switches bots: no alert yanked into another bot's view, no forced
-// re-open — the sidebar clears "working" and the history refreshes
-// only if the user is still looking at this bot.
 async function runBotTask(botId) {
-    if (botBusy[botId]) return;
+    if (state.busy[botId]) return;
     setBotBusy(botId, true);
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}/run`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const data = await response.json();
-        setBotBusy(botId, false);
-        if (data.error) {
-            if (currentBotId === botId) alert(data.error);
-            else console.warn('Background task failed for bot', botId, data.error);
-        } else if (currentBotId === botId) {
-            reenableComposer();
-            alert('Task completed: ' + (data.response || '').substring(0, 200));
-            await refreshChatHistory(botId);
-        }
-        await loadBots();
-    } catch (e) {
-        setBotBusy(botId, false);
-        if (currentBotId === botId) {
-            reenableComposer();
-            alert('Failed to run task');
-        } else {
-            console.warn('Background task failed for bot', botId, e);
-        }
-        await loadBots();
+    const { ok, data } = await postJson(`/api/bots/${encodeURIComponent(botId)}/run`, {});
+    setBotBusy(botId, false);
+    const viewing = state.currentBotId === botId;
+    if (!ok || data.error) {
+        const message = data.error || 'Failed to run task';
+        if (viewing) toast(message, 'error');
+        else console.warn('Background task failed for bot', botId, message);
+    } else if (viewing) {
+        toast(`Task completed: ${(data.response || '').substring(0, 120)}`, 'success', 5000);
+        await refreshChatHistory(botId);
     }
+    if (viewing) reenableComposer();
+    await loadBots();
 }
 
-// Load settings
-async function loadSettings() {
-    try {
-        const response = await fetch(`${API_BASE}/api/settings`);
-        const settings = await response.json();
-        currentSettings = settings;
-        document.getElementById('settingsLocalModel').value = settings.llm?.local_model || 'llama3.2:3b';
-        document.getElementById('settingsSecondaryModel').value = settings.llm?.secondary_model || '';
-        document.getElementById('settingsSecondaryBaseUrl').value = settings.llm?.secondary_base_url || '';
-        document.getElementById('settingsSecondaryApiKey').value = settings.llm?.secondary_api_key || '';
-        
-        // Load LLM mode
-        if (settings.llm?.mode) {
-            const modeSelect = document.querySelector('input[name="llmMode"]');
-            if (modeSelect) modeSelect.value = settings.llm.mode;
-        }
-        
-        loadLlmStatus();
-        loadMcpStatus();
-        document.getElementById('settingsRemoteBaseUrl').value = settings.llm?.remote_base_url || '';
-        document.getElementById('settingsRemoteApiKey').value = settings.llm?.remote_api_key || '';
-        document.getElementById('settingsRemoteModel').value = settings.llm?.remote_model || 'gpt-4o-mini';
-        const gitUrlInput = document.getElementById('settingsSkillsGitUrl');
-        if (gitUrlInput) gitUrlInput.value = settings.skills?.git_url || '';
-        document.getElementById('settingsSchedulerEnabled').checked = settings.scheduler?.enabled !== false;
-        document.getElementById('settingsSchedulerTick').value = settings.scheduler?.tick_seconds || 30;
-    } catch (e) {
-        console.warn('Failed to load settings', e);
+/* ── Bots: lifecycle ─────────────────────────────────────────────── */
+
+async function setBotEnabled(botId, enabled) {
+    const verb = enabled ? 'enable' : 'disable';
+    if (!confirm(`Are you sure you want to ${verb} this bot?`)) return;
+    const { ok } = await sendJson('PUT', `/api/bots/${encodeURIComponent(botId)}`, { enabled });
+    if (!ok) {
+        toast(`Could not ${verb} the bot.`, 'error');
+        return;
     }
+    const bot = state.bots.find(b => b.id === botId);
+    if (bot) bot.config.enabled = enabled;
+    openBotChat(botId);
 }
 
-// Save settings
-async function saveSettings() {
-    const settings = {
-        llm: {
-            local_model: document.getElementById('settingsLocalModel').value,
-            secondary_model: document.getElementById('settingsSecondaryModel').value,
-            secondary_base_url: document.getElementById('settingsSecondaryBaseUrl').value,
-            secondary_api_key: document.getElementById('settingsSecondaryApiKey').value,
-            remote_base_url: document.getElementById('settingsRemoteBaseUrl').value,
-            remote_api_key: document.getElementById('settingsRemoteApiKey').value,
-            remote_model: document.getElementById('settingsRemoteModel').value,
-        },
-        scheduler: {
-            enabled: document.getElementById('settingsSchedulerEnabled').checked,
-            tick_seconds: parseInt(document.getElementById('settingsSchedulerTick').value) || 30,
-        },
-    };
-    
-    // Get the selected LLM mode
-    const modeSelect = document.querySelector('input[name="llmMode"]');
-    if (modeSelect) {
-        settings.llm.mode = modeSelect.value;
+async function deleteBot(botId) {
+    if (!confirm('Are you sure you want to delete this bot? This action cannot be undone.')) return;
+    const { ok, data } = await fetchJson(`/api/bots/${encodeURIComponent(botId)}`, { method: 'DELETE' });
+    if (!ok) {
+        toast(data.error || 'Could not delete the bot.', 'error');
+        return;
     }
-    
-    const response = await fetch(`${API_BASE}/api/settings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-    });
-    const data = await response.json();
-    const statusEl = document.getElementById('settingsSaveStatus');
-    if (data.success) {
-        // Inline confirmation, then close so the user actually sees it.
-        setStatus(statusEl, 'Settings saved ✓', true);
-        await loadSettings();
-        setTimeout(() => closeModal(settingsModal), 900);
-    } else {
-        setStatus(statusEl, 'Failed to save settings.', false);
+    if (state.currentBotId === botId) {
+        state.currentBotId = null;
+        restorePills();
+        chatArea.innerHTML = '<div class="empty">Select a bot to begin</div>';
     }
+    await loadBots();
+    toast('Bot deleted.', 'success');
 }
 
-// Event Listeners Setup
-if (newBotBtn) {
-    newBotBtn.addEventListener('click', () => {
-        toggleSidebar(false);
-        document.getElementById('newBotForm').reset();
-        document.getElementById('scheduleOptions').style.display = 'none';
-        newBotModal.classList.add('active');
-    });
-}
-
-if (settingsBtn) {
-    settingsBtn.addEventListener('click', () => {
-        toggleSidebar(false);
-        loadSettings();
-        settingsModal.classList.add('active');
-    });
-}
-
-// ── Sidebar toggle (mobile drawer) ────────────────────────────────────
-const sidebarToggleBtn = document.getElementById('sidebarToggleBtn');
-const sidebarOverlay = document.getElementById('sidebarOverlay');
-const sidebarEl = document.getElementById('sidebar');
-
-function toggleSidebar(open) {
-    const isOpen = open !== false;
-    if (sidebarToggleBtn) sidebarToggleBtn.setAttribute('aria-expanded', String(isOpen));
-    if (sidebarEl) sidebarEl.classList.toggle('mobile-expanded', isOpen);
-    if (sidebarOverlay) sidebarOverlay.classList.toggle('active', isOpen);
-}
-
-if (sidebarToggleBtn) {
-    sidebarToggleBtn.addEventListener('click', () => {
-        toggleSidebar();
-    });
-}
-
-if (sidebarOverlay) {
-    sidebarOverlay.addEventListener('click', () => {
-        toggleSidebar(false);
-    });
-}
-
-const sidebarCloseBtn = document.getElementById('sidebarCloseBtn');
-if (sidebarCloseBtn) {
-    sidebarCloseBtn.addEventListener('click', () => {
-        toggleSidebar(false);
-    });
-}
-
-// Sidebar closes on bot selection via toggleSidebar(false) inside
-// openBotChat (mirrors Settings / New Bot / pills behaviour).
-
-// ── Skills status pill: opens Settings → Skills tab ───────────────────
-// Like the MCP pill, clicking it loads settings and jumps to a tab.
-const skillsPill = document.getElementById('skillsPill');
-if (skillsPill) {
-    skillsPill.addEventListener('click', () => {
-        toggleSidebar(false);
-        loadSettings();
-        settingsModal.classList.add('active');
-        document.querySelector('.tab-btn[data-tab="skills"]')?.click();
-        const skillsTab = document.getElementById('tab-skills');
-        if (skillsTab) skillsTab.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-}
-
-// Set initial sidebar state on mobile (collapsed by default).
-if (window.innerWidth <= 768) {
-    toggleSidebar(false);
-}
-
-const newBotScheduleEl = document.getElementById('newBotSchedule');
-if (newBotScheduleEl) {
-    newBotScheduleEl.addEventListener('change', (e) => {
-        document.getElementById('scheduleOptions').style.display = e.target.value === 'interval' ? 'block' : 'none';
-    });
-}
-
-if (newBotForm) {
-    newBotForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const scheduleType = document.getElementById('newBotSchedule').value;
-        const botData = {
-            name: document.getElementById('newBotName').value,
-            skill_id: document.getElementById('newBotSkill').value || '',
-            task_prompt: document.getElementById('newBotTaskPrompt').value,
-            schedule_type: scheduleType,
-            interval_seconds: scheduleType === 'interval' ? parseInt(document.getElementById('newBotInterval').value) || 3600 : 0,
-            enabled: document.getElementById('newBotEnabled').checked,
-        };
-        await fetch(`${API_BASE}/api/bots`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(botData)
-        });
-        await loadBots();
-        await loadSkillsForNewBot();
-        closeModal(newBotModal);
-    });
-}
-
-async function openEditBot(botId) {
-    try {
-        const response = await fetch(`${API_BASE}/api/bots/${botId}`);
-        if (!response.ok) return;
-        const bot = await response.json();
-        await loadSkillsForNewBot();
-        document.getElementById('editBotId').value = bot.id;
-        document.getElementById('editBotName').value = bot.name || '';
-        document.getElementById('editBotSkill').value = bot.skill_id || '';
-        document.getElementById('editBotTaskPrompt').value = (bot.config && bot.config.task_prompt) || '';
-        const schedule = (bot.config && bot.config.schedule_type) || 'none';
-        document.getElementById('editBotSchedule').value = schedule;
-        document.getElementById('editBotInterval').value = (bot.config && bot.config.interval_seconds) || 3600;
-        document.getElementById('editBotCron').value = (bot.config && bot.config.cron_expression) || '';
-        toggleEditScheduleGroups(schedule);
-        document.getElementById('editBotStatus').textContent = '';
-        toggleSidebar(false);
-        document.getElementById('editBotModal').classList.add('active');
-    } catch (e) {
-        console.warn('Failed to open bot editor', e);
+chatArea.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-bot-action]');
+    if (!btn) return;
+    const id = btn.dataset.botId;
+    switch (btn.dataset.botAction) {
+        case 'disable': setBotEnabled(id, false); break;
+        case 'enable': setBotEnabled(id, true); break;
+        case 'delete': deleteBot(id); break;
+        case 'edit': openEditBot(id); break;
     }
+});
+
+async function loadSkillsForNewBot() {
+    const select = $('newBotSkill');
+    const editSelect = $('editBotSkill');
+    const { ok, data } = await fetchJson('/api/skills/available');
+    const skills = ok ? (data.skills || []) : [
+        { id: 'demo', name: 'Demo Mode' },
+        { id: 'general', name: 'General' },
+    ];
+    const html = '<option value="">(none)</option>' +
+        skills.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
+    if (select) select.innerHTML = html;
+    if (editSelect) editSelect.innerHTML = html;
 }
 
 function toggleEditScheduleGroups(schedule) {
-    document.getElementById('editScheduleOptions').style.display = schedule === 'interval' ? 'block' : 'none';
-    document.getElementById('editCronOptions').style.display = schedule === 'cron' ? 'block' : 'none';
+    $('editScheduleOptions').style.display = schedule === 'interval' ? 'block' : 'none';
+    $('editCronOptions').style.display = schedule === 'cron' ? 'block' : 'none';
 }
 
-const editBotForm = document.getElementById('editBotForm');
-if (editBotForm) {
-    editBotForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const botId = document.getElementById('editBotId').value;
-        const scheduleType = document.getElementById('editBotSchedule').value;
-        const payload = {
-            name: document.getElementById('editBotName').value,
-            skill_id: document.getElementById('editBotSkill').value || '',
-            task_prompt: document.getElementById('editBotTaskPrompt').value,
-            schedule_type: scheduleType,
-            interval_seconds: scheduleType === 'interval' ? parseInt(document.getElementById('editBotInterval').value) || 3600 : 0,
-            cron_expression: scheduleType === 'cron' ? document.getElementById('editBotCron').value : '',
-        };
-        const statusEl = document.getElementById('editBotStatus');
-        try {
-            const response = await fetch(`${API_BASE}/api/bots/${botId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (response.ok) {
-                setStatus(statusEl, 'Bot saved.', true);
-                const modal = document.getElementById('editBotModal');
-                if (modal) closeModal(modal);
-                await loadBots();
-                openBotChat(botId);
-            } else {
-                setStatus(statusEl, 'Failed to save bot.', false);
-            }
-        } catch (err) {
-            setStatus(statusEl, 'Failed to save bot.', false);
-        }
-    });
-}
-
-const editBotScheduleEl = document.getElementById('editBotSchedule');
-if (editBotScheduleEl) {
-    editBotScheduleEl.addEventListener('change', (e) => toggleEditScheduleGroups(e.target.value));
-}
-
-if (skillForm) {
-    skillForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const skill = {
-            name: document.getElementById('skillName').value,
-            description: document.getElementById('skillDescription').value,
-            skills: document.getElementById('skillSkills').value.split(',').map(s => s.trim()).filter(s => s),
-            abilities: document.getElementById('skillAbilities').value.split(',').map(a => a.trim()).filter(a => a),
-            system_prompt: document.getElementById('skillSystemPrompt').value
-        };
-        await fetch(`${API_BASE}/api/skills`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(skill)
-        });
-        await loadSkillsForNewBot();
-        closeModal(skillModal);
-    });
-}
-
-if (settingsForm) {
-    settingsForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const saveBtn = document.getElementById('settingsSaveBtn');
-        const originalText = saveBtn ? saveBtn.textContent : '';
-        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-        try {
-            await saveSettings();
-        } finally {
-            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = originalText; }
-        }
-    });
-}
-
-// Modal handlers
-closeModalBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        const modal = btn.closest('.modal');
-        if (modal) closeModal(modal);
-    });
-});
-
-window.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal')) {
-        closeModal(e.target);
-    }
-});
-
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-        document.querySelectorAll('.modal.active').forEach(closeModal);
-    }
-});
-
-function closeModal(modal) {
-    modal.classList.remove('active');
-}
-
-// Bot-detail actions (delegated: the info panel is rebuilt per bot).
-if (chatArea) chatArea.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-bot-action]');
-    if (!btn) return;
-    const action = btn.dataset.botAction;
-    const id = btn.dataset.botId;
-    if (action === 'disable') disableBot(id);
-    else if (action === 'delete') deleteBot(id);
-    else if (action === 'enable') enableBot(id);
-    else if (action === 'edit') openEditBot(id);
-});
-
-// Ask about a file: one text file per chat view, read client-side and
-// sent along as context with every message while the view is open.
-// The file is never stored server-side and never lands in history;
-// switching bots or reloading drops it (openBotChat resets it).
-const MAX_ATTACH_CHARS = 100_000;
-
-function renderAttachedChip() {
-    let bar = document.getElementById('attachedFileBar');
-    if (!attachedFile) {
-        if (bar) bar.remove();
+async function openEditBot(botId) {
+    const { ok, data: bot } = await fetchJson(`/api/bots/${encodeURIComponent(botId)}`);
+    if (!ok) {
+        toast('Could not load the bot for editing.', 'error');
         return;
     }
+    await loadSkillsForNewBot();
+    const cfg = bot.config || {};
+    $('editBotId').value = bot.id;
+    $('editBotName').value = bot.name || '';
+    $('editBotSkill').value = bot.skill_id || '';
+    $('editBotTaskPrompt').value = cfg.task_prompt || '';
+    const schedule = cfg.schedule_type || 'none';
+    $('editBotSchedule').value = schedule;
+    $('editBotInterval').value = cfg.interval_seconds || 3600;
+    $('editBotCron').value = cfg.cron_expression || '';
+    toggleEditScheduleGroups(schedule);
+    $('editBotStatus').textContent = '';
+    toggleSidebar(false);
+    openModal(editBotModal);
+}
+
+$('editBotSchedule')?.addEventListener('change', (e) => toggleEditScheduleGroups(e.target.value));
+
+$('editBotForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const botId = $('editBotId').value;
+    const schedule = $('editBotSchedule').value;
+    const statusEl = $('editBotStatus');
+    const { ok } = await sendJson('PUT', `/api/bots/${encodeURIComponent(botId)}`, {
+        name: $('editBotName').value,
+        skill_id: $('editBotSkill').value || '',
+        task_prompt: $('editBotTaskPrompt').value,
+        schedule_type: schedule,
+        interval_seconds: schedule === 'interval' ? parseInt($('editBotInterval').value, 10) || 3600 : 0,
+        cron_expression: schedule === 'cron' ? $('editBotCron').value : '',
+    });
+    if (!ok) {
+        setStatus(statusEl, 'Failed to save bot.', false);
+        return;
+    }
+    closeModal(editBotModal);
+    await loadBots();
+    openBotChat(botId);
+    toast('Bot saved.', 'success');
+});
+
+newBotBtn?.addEventListener('click', () => {
+    toggleSidebar(false);
+    $('newBotForm').reset();
+    $('scheduleOptions').style.display = 'none';
+    openModal(newBotModal);
+});
+
+$('newBotSchedule')?.addEventListener('change', (e) => {
+    $('scheduleOptions').style.display = e.target.value === 'interval' ? 'block' : 'none';
+});
+
+$('newBotForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const scheduleType = $('newBotSchedule').value;
+    const { ok, data } = await postJson('/api/bots', {
+        name: $('newBotName').value,
+        skill_id: $('newBotSkill').value || '',
+        task_prompt: $('newBotTaskPrompt').value,
+        schedule_type: scheduleType,
+        interval_seconds: scheduleType === 'interval' ? parseInt($('newBotInterval').value, 10) || 3600 : 0,
+        enabled: $('newBotEnabled').checked,
+    });
+    if (!ok) {
+        toast(data.error || 'Could not create the bot.', 'error');
+        return;
+    }
+    closeModal(newBotModal);
+    await loadBots();
+    if (data.bot && data.bot.id) openBotChat(data.bot.id);
+});
+
+/* ── Attachments and chat search ─────────────────────────────────── */
+
+function renderAttachedChip() {
+    let bar = $('attachedFileBar');
+    const file = state.attachedFile;
+    if (!file) {
+        bar?.remove();
+        return;
+    }
+    const composer = document.querySelector('.chat-composer');
+    if (!composer) return;
     if (!bar) {
         bar = document.createElement('div');
         bar.id = 'attachedFileBar';
         bar.className = 'attached-file-bar';
-        const composer = document.querySelector('.chat-composer');
-        if (composer) composer.before(bar);
-        else return;
+        composer.before(bar);
     }
-    bar.innerHTML = `<span>Attached: ${escapeHtml(attachedFile.name)} (${attachedFile.content.length.toLocaleString()} chars)</span> <button type="button" class="btn-secondary small" id="detachFileBtn" aria-label="Remove attachment">×</button>`;
-    document.getElementById('detachFileBtn').addEventListener('click', () => {
-        attachedFile = null;
+    bar.innerHTML = `
+        <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+        <span>Attached: ${escapeHtml(file.name)} (${file.content.length.toLocaleString()} chars)</span>
+        <button type="button" class="btn-secondary small" id="detachFileBtn" aria-label="Remove attachment"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
+    $('detachFileBtn').addEventListener('click', () => {
+        state.attachedFile = null;
         renderAttachedChip();
     });
 }
 
-const fileAttachInput = document.getElementById('fileAttachInput');
-if (fileAttachInput) fileAttachInput.addEventListener('change', () => {
-    const file = fileAttachInput.files[0];
-    fileAttachInput.value = '';
+$('fileAttachInput')?.addEventListener('change', (e) => {
+    const input = e.target;
+    const file = input.files[0];
+    input.value = '';
     if (!file) return;
     if (file.size > MAX_ATTACH_CHARS) {
-        alert('That file is too large to attach (100,000 character limit).');
+        toast('That file is too large to attach (100,000 character limit).', 'error');
         return;
     }
     const reader = new FileReader();
     reader.onload = () => {
         const text = String(reader.result || '');
         if (text.includes('\0')) {
-            alert('Only text files can be attached.');
+            toast('Only text files can be attached.', 'error');
             return;
         }
-        attachedFile = { name: file.name, content: text.slice(0, MAX_ATTACH_CHARS) };
+        state.attachedFile = { name: file.name, content: text.slice(0, MAX_ATTACH_CHARS) };
         renderAttachedChip();
     };
-    reader.onerror = () => alert('Could not read that file.');
+    reader.onerror = () => toast('Could not read that file.', 'error');
     reader.readAsText(file);
 });
 
-// Search across chats: one box, substring over all bots' history.
-// Debounced; a result opens that bot's chat on click.
-let chatSearchTimer = null;
-const chatSearchInput = document.getElementById('chatSearchInput');
-const chatSearchResults = document.getElementById('chatSearchResults');
-if (chatSearchInput && chatSearchResults) {
-    chatSearchInput.addEventListener('input', () => {
-        clearTimeout(chatSearchTimer);
-        const query = chatSearchInput.value.trim();
-        if (!query) {
-            chatSearchResults.innerHTML = '';
-            return;
-        }
-        chatSearchTimer = setTimeout(async () => {
-            try {
-                const response = await fetch(`${API_BASE}/api/bots/search?q=${encodeURIComponent(query)}`);
-                const data = await response.json();
-                const results = data.results || [];
-                if (!results.length) {
-                    chatSearchResults.innerHTML = '<p class="search-empty">No matches.</p>';
-                    return;
-                }
-                chatSearchResults.innerHTML = results.map(r => `
-                    <div class="search-result" data-bot-id="${escapeHtml(r.bot_id)}">
-                        <span class="search-result-bot">${escapeHtml(r.bot_name)}</span>
-                        <span class="search-result-role">${escapeHtml(r.role)}</span>
-                        <span class="search-result-text">${escapeHtml(r.snippet)}</span>
-                    </div>
-                `).join('');
-                chatSearchResults.querySelectorAll('.search-result').forEach(el => el.addEventListener('click', () => {
-                    chatSearchInput.value = '';
-                    chatSearchResults.innerHTML = '';
-                    openBotChat(el.dataset.botId);
-                }));
-            } catch (e) {
-                console.warn('Chat search failed', e);
-            }
-        }, 250);
-    });
+const chatSearchInput = $('chatSearchInput');
+const chatSearchResults = $('chatSearchResults');
+
+async function runChatSearch() {
+    const query = chatSearchInput.value.trim();
+    if (!query) {
+        chatSearchResults.innerHTML = '';
+        return;
+    }
+    const { ok, data } = await fetchJson(`/api/bots/search?q=${encodeURIComponent(query)}`);
+    if (!ok) {
+        chatSearchResults.innerHTML = '<p class="search-empty">Search failed.</p>';
+        return;
+    }
+    const results = data.results || [];
+    if (!results.length) {
+        chatSearchResults.innerHTML = '<p class="search-empty">No matches.</p>';
+        return;
+    }
+    chatSearchResults.innerHTML = results.map(r => `
+        <div class="search-result" role="button" tabindex="0" data-bot-id="${escapeHtml(r.bot_id)}">
+            <span class="search-result-bot">${escapeHtml(r.bot_name)}</span>
+            <span class="search-result-role">${escapeHtml(r.role)}</span>
+            <span class="search-result-text">${escapeHtml(r.snippet)}</span>
+        </div>`).join('');
 }
 
-// Status pill opens Settings (it reports what Settings configures).
-const llmStatusPill = document.getElementById('llmStatusPill');
-if (llmStatusPill) llmStatusPill.addEventListener('click', () => {
-    toggleSidebar(false);
-    loadSettings();
-    settingsModal.classList.add('active');
-});
-
-// MCP pill mirrors it, landing on the MCP tab instead of the default one.
-const mcpStatusPill = document.getElementById('mcpStatusPill');
-if (mcpStatusPill) mcpStatusPill.addEventListener('click', () => {
-    toggleSidebar(false);
-    loadSettings();
-    settingsModal.classList.add('active');
-    document.querySelector('.tab-btn[data-tab="mcp"]')?.click();
-});
-
-// Initialize application
-init();
-// ── LLM status (Ollama) ──────────────────────────────────────────────
-
-function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, c => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[c]));
+function openSearchResult(el) {
+    chatSearchInput.value = '';
+    chatSearchResults.innerHTML = '';
+    openBotChat(el.dataset.botId);
 }
+
+chatSearchInput?.addEventListener('input', debounce(runChatSearch, 250));
+chatSearchInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        chatSearchInput.value = '';
+        chatSearchResults.innerHTML = '';
+    }
+});
+chatSearchResults?.addEventListener('click', (e) => {
+    const el = e.target.closest('.search-result');
+    if (el) openSearchResult(el);
+});
+chatSearchResults?.addEventListener('keydown', (e) => {
+    const el = e.target.closest('.search-result');
+    if (el && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        openSearchResult(el);
+    }
+});
+
+/* ── Markdown rendering for bot replies ──────────────────────────── */
 
 // === formatAssistantMessage:begin ===
-// LLM replies rendered as tight markdown, no library, and no HTML
-// injection from model output. Pipeline: pull fenced code blocks out
-// first (their whitespace stays verbatim), tighten the rest (trim,
-// collapse 3+ newlines to 2, strip trailing spaces), escape HTML, then
-// apply inline markdown and block structure (headings, lists, paragraphs).
+// Tight markdown renderer with no library and no HTML injection from model
+// output: fenced code is pulled out first, the rest is escaped, then inline
+// markdown and block structure are applied.
 function formatAssistantMessage(text) {
     const codeBlocks = [];
     let body = String(text || '');
@@ -1019,7 +775,7 @@ function formatAssistantMessage(text) {
 
     const blocks = [];
     let paragraph = [];
-    let list = null; // { tag, items }
+    let list = null;
     const flushParagraph = () => {
         if (paragraph.length) {
             blocks.push(`<p>${paragraph.map(inline).join('<br>')}</p>`);
@@ -1067,408 +823,120 @@ function formatAssistantMessage(text) {
 }
 // === formatAssistantMessage:end ===
 
-// Fetch /api/llm/status and reflect it in the header pill, the Settings
-// model list, and the first-run banner. Safe to call any time.
-async function loadLlmStatus() {
-    const pill = document.getElementById('llmStatusPill');
-    const line = document.getElementById('llmStatusLine');
-    const banner = document.getElementById('llmBanner');
-    try {
-        const response = await fetch(`${API_BASE}/api/llm/status`);
-        const status = await response.json();
-        let pillText, pillClass, bannerText = '';
-        if (!status.running) {
-            pillText = 'Ollama offline'; pillClass = 'bad';
-            bannerText = 'Ollama is offline — start it with `ollama serve`, then pull a model from Settings → Local Models.';
-            if (line) { line.textContent = status.error || 'Ollama is not reachable.'; line.className = 'llm-status bad'; }
-        } else if (!status.configured_model_installed) {
-            pillText = 'Ollama · model missing'; pillClass = 'warn';
-            bannerText = `Ollama is running, but '${status.configured_model}' is not installed — pull it from Settings → Local Models.`;
-            if (line) { line.textContent = bannerText; line.className = 'llm-status bad'; }
-        } else {
-            pillText = `Ollama · ${status.configured_model}`; pillClass = 'ok';
-            if (line) { line.textContent = `Ollama is running with ${status.models.length} model(s) installed.`; line.className = 'llm-status ok'; }
-        }
-        if (pill) { pill.textContent = pillText; pill.className = `header-status ${pillClass}`; }
-        if (banner) {
-            if (bannerText) { banner.style.display = 'block'; banner.textContent = bannerText; }
-            else banner.style.display = 'none';
-        }
-        // The model browser (cards, not a select) renders from the same
-        // status payload; refresh it whenever status refreshes.
-        refreshModelBrowser(status);
-    } catch (e) {
-        if (pill) { pill.textContent = 'LLM status unknown'; pill.className = 'header-status warn'; }
-        console.warn('Failed to load LLM status', e);
-    }
-}
+/* ── Settings: modal, tabs, save ─────────────────────────────────── */
 
-// ── MCP status (mirrors the LLM pill) ──────────────────────────────────
-async function loadMcpStatus() {
-    const pill = document.getElementById('mcpStatusPill');
-    if (!pill) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/mcp/status`);
-        const status = await response.json();
-        if (!status.running) {
-            pill.textContent = 'MCP offline'; pill.className = 'header-status bad';
-        } else if (typeof status.count === 'number') {
-            pill.textContent = `MCP · ${status.count} server${status.count === 1 ? '' : 's'}`; pill.className = 'header-status ok';
-        } else {
-            pill.textContent = 'MCP · running'; pill.className = 'header-status ok';
-        }
-    } catch (e) {
-        pill.textContent = 'MCP status unknown'; pill.className = 'header-status warn';
-        console.warn('Failed to load MCP status', e);
-    }
-}
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabContents = document.querySelectorAll('.tab-content');
 
-// ── Model browser (Settings → LLM Provider) ──────────────────────────
-// Cards from /api/llm/catalog (sized to host RAM), green for installed,
-// click a card to pull, unload icon on loaded cards, and a dropdown on
-// loaded cards to fill the Primary / Secondary slots.
-let modelBrowserState = { catalog: null, installed: [], primary: '', secondary: '', filter: 'all' };
-
-async function refreshModelBrowser(status) {
-    const grid = document.getElementById('modelCatalogGrid');
-    const loadedGrid = document.getElementById('loadedModelsGrid');
-    if (!grid && !loadedGrid) return;
-    try {
-        const [statusRes, catalogRes, settingsRes] = await Promise.all([
-            status ? Promise.resolve({ json: async () => status }) : fetch(`${API_BASE}/api/llm/status`),
-            fetch(`${API_BASE}/api/llm/catalog`),
-            fetch(`${API_BASE}/api/settings`),
-        ]);
-        const st = await statusRes.json();
-        const catalog = await catalogRes.json();
-        const settings = await settingsRes.json();
-        modelBrowserState.catalog = catalog;
-        modelBrowserState.installed = st.models || [];
-        modelBrowserState.primary = settings.llm?.local_model || '';
-        modelBrowserState.secondary = settings.llm?.secondary_model || '';
-        const localInput = document.getElementById('settingsLocalModel');
-        const secInput = document.getElementById('settingsSecondaryModel');
-        if (localInput) localInput.value = modelBrowserState.primary;
-        if (secInput) secInput.value = modelBrowserState.secondary;
-        renderModelBrowser();
-    } catch (e) {
-        console.warn('Failed to load model browser', e);
-    }
-}
-
-function renderModelBrowser() {
-    const { catalog, installed, primary, secondary, filter } = modelBrowserState;
-    const grid = document.getElementById('modelCatalogGrid');
-    const loadedGrid = document.getElementById('loadedModelsGrid');
-    const note = document.getElementById('catalogNote');
-    const linkBox = document.getElementById('ollamaSearchLink');
-    const chipsBox = document.getElementById('modelFilterChips');
-    if (!catalog) return;
-    const installedSet = new Set(installed);
-
-    if (chipsBox) {
-        const chips = ['all', ...(catalog.capabilities || [])];
-        chipsBox.innerHTML = chips.map(c =>
-            `<button type="button" class="chip${c === filter ? ' active' : ''}" data-chip="${c}">${c === 'all' ? 'All' : c}</button>`
-        ).join('');
-        chipsBox.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
-            modelBrowserState.filter = chip.dataset.chip;
-            renderModelBrowser();
-        }));
-    }
-
-    // Loaded models: green, with unload + slot assignment.
-    if (loadedGrid) {
-        const bothFilled = Boolean(primary && secondary);
-        if (!installed.length) {
-            loadedGrid.innerHTML = '<p style="color: var(--color-muted);">Nothing loaded yet — pull a model below.</p>';
-        } else {
-            loadedGrid.innerHTML = installed.map(name => {
-                const isPrimary = name === primary;
-                const isSecondary = name === secondary;
-                let slotHtml = '';
-                if (isPrimary) {
-                    slotHtml = `<span class="mcp-badge mcp-badge-local">Primary</span>
-                        <button type="button" class="btn-icon" data-action="unset" data-slot="primary" data-model="${escapeHtml(name)}" title="Unset primary" aria-label="Unset primary model">&#10006;</button>`;
-                } else if (isSecondary) {
-                    slotHtml = `<span class="mcp-badge mcp-badge-local">Secondary</span>
-                        <button type="button" class="btn-icon" data-action="unset" data-slot="secondary" data-model="${escapeHtml(name)}" title="Unset secondary" aria-label="Unset secondary model">&#10006;</button>`;
-                } else if (!bothFilled) {
-                    // Dropdowns stay visible until BOTH slots are filled.
-                    slotHtml = `<select data-assign="${escapeHtml(name)}" aria-label="Assign model slot">
-                        <option value="">Assign…</option>
-                        <option value="primary">Primary</option>
-                        <option value="secondary">Secondary</option>
-                    </select>`;
-                }
-                return `<div class="model-card loaded">
-                    <div class="model-header">
-                        <span class="model-name">${escapeHtml(name)}</span>
-                        <span class="mcp-badge status-active">Loaded</span>
-                    </div>
-                    <div class="model-actions">
-                        ${slotHtml}
-                        <button type="button" class="btn-icon" data-action="unload" data-model="${escapeHtml(name)}" title="Unload model" aria-label="Unload model">&#9167;</button>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-    }
-
-    // Catalog cards: green when already installed, click to pull otherwise.
-    if (grid) {
-        const shown = (catalog.models || []).filter(m =>
-            filter === 'all' || (m.capabilities || []).includes(filter));
-        grid.innerHTML = shown.map(m => {
-            const isInstalled = installedSet.has(m.name);
-            const isDefault = m.name === catalog.default_model;
-            return `<div class="model-card${isInstalled ? ' loaded' : ''}"${isInstalled ? '' : ` data-pull="${escapeHtml(m.name)}"`}>
-                <div class="model-header">
-                    <span class="model-name">${escapeHtml(m.name)}</span>
-                    <span class="model-size">${m.size_gb} GB</span>
-                    ${isDefault ? '<span class="mcp-badge mcp-badge-local">Default</span>' : ''}
-                    ${isInstalled ? '<span class="mcp-badge status-active">Loaded</span>' : ''}
-                </div>
-                <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
-                <div class="model-blurb">${escapeHtml(m.blurb || '')}</div>
-                ${isInstalled ? '' : `<button type="button" class="btn-save small" data-pull="${escapeHtml(m.name)}">Pull</button>`}
-            </div>`;
-        }).join('') || '<p style="color: var(--color-muted);">No models match this filter.</p>';
-    }
-
-    if (note) {
-        note.textContent = (catalog.size_cap_gb
-            ? `Showing models up to ${catalog.size_cap_gb} GB (available RAM: ${catalog.ram_available_gb} GB).` +
-              (catalog.hidden_count ? ` ${catalog.hidden_count} larger model(s) hidden.` : '')
-            : 'Host RAM size unknown — showing all models.') +
-            ` Default model for this host: ${catalog.default_model}.`;
-    }
-    if (linkBox && catalog.ollama_search_url) {
-        linkBox.innerHTML = `<a href="${escapeHtml(catalog.ollama_search_url)}" target="_blank" rel="noopener">Browse all models on ollama.com</a>`;
-    }
-}
-
-// Delegated actions for both model grids (they re-render often).
-document.addEventListener('click', async (e) => {
-    const unloadBtn = e.target.closest('[data-action="unload"]');
-    if (unloadBtn) {
-        const model = unloadBtn.dataset.model;
-        if (!confirm(`Unload '${model}'? This deletes it from Ollama.`)) return;
-        await fetch(`${API_BASE}/api/llm/models/${encodeURIComponent(model)}`, { method: 'DELETE' });
-        await refreshModelBrowser();
-        await loadLlmStatus();
-        return;
-    }
-    const unsetBtn = e.target.closest('[data-action="unset"]');
-    if (unsetBtn) {
-        const patch = { llm: {} };
-        if (unsetBtn.dataset.slot === 'primary') patch.llm.local_model = '';
-        else patch.llm.secondary_model = '';
-        await fetch(`${API_BASE}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-        await refreshModelBrowser();
-        await loadLlmStatus();
-        return;
-    }
-    const pullBtn = e.target.closest('button[data-pull]');
-    if (pullBtn && document.getElementById('modelCatalogGrid')?.contains(pullBtn)) {
-        e.stopPropagation();
-        openPullModal(pullBtn.dataset.pull);
-        return;
-    }
-    const card = e.target.closest('.model-card[data-pull]');
-    if (card && document.getElementById('modelCatalogGrid')?.contains(card)) {
-        openPullModal(card.dataset.pull);
-    }
-});
-document.addEventListener('change', async (e) => {
-    const select = e.target.closest('select[data-assign]');
-    if (!select || !select.value) return;
-    const model = select.dataset.assign;
-    const slot = select.value;
-    const patch = { llm: {} };
-    if (slot === 'primary') {
-        patch.llm.local_model = model;
-        if (modelBrowserState.secondary === model) patch.llm.secondary_model = '';
-    } else {
-        patch.llm.secondary_model = model;
-        if (modelBrowserState.primary === model) patch.llm.local_model = '';
-    }
-    await fetch(`${API_BASE}/api/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
-    await refreshModelBrowser();
-    await loadLlmStatus();
-});
-
-// ── Pull modal: click a card → modal shows live pull progress ─────────
-let pullPollTimer = null;
-async function openPullModal(model) {
-    const modal = document.getElementById('pullModal');
-    const modelEl = document.getElementById('pullModalModel');
-    const statusEl = document.getElementById('pullModalStatus');
-    if (!modal) return;
-    if (modelEl) modelEl.textContent = model;
-    if (statusEl) statusEl.textContent = 'Starting pull…';
-    modal.classList.add('active');
-    try {
-        const response = await fetch(`${API_BASE}/api/llm/pull`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model })
-        });
-        const data = await response.json();
-        if (!response.ok) {
-            if (statusEl) statusEl.textContent = data.error || 'Pull failed to start.';
-            return;
-        }
-        if (statusEl) statusEl.textContent = data.job.detail || 'Pulling…';
-        if (pullPollTimer) clearInterval(pullPollTimer);
-        pullPollTimer = setInterval(pollPullModal, 2000);
-    } catch (err) {
-        if (statusEl) statusEl.textContent = `Pull failed: ${err.message}`;
-    }
-}
-async function pollPullModal() {
-    const modal = document.getElementById('pullModal');
-    const statusEl = document.getElementById('pullModalStatus');
-    if (!modal || !modal.classList.contains('active')) {
-        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-        return;
-    }
-    try {
-        const response = await fetch(`${API_BASE}/api/llm/pull`);
-        const job = (await response.json()).job || {};
-        if (statusEl) statusEl.textContent = job.detail || '';
-        if (job.state === 'done' || job.state === 'error') {
-            if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-            await refreshModelBrowser();
-            await loadLlmStatus();
-        }
-    } catch (err) {
-        if (pullPollTimer) { clearInterval(pullPollTimer); pullPollTimer = null; }
-        if (statusEl) statusEl.textContent = 'Pull status check failed.';
-    }
-}
-const pullModalClose = document.getElementById('pullModalClose');
-if (pullModalClose) pullModalClose.addEventListener('click', () => {
-    const modal = document.getElementById('pullModal');
-    if (modal) closeModal(modal);
-});
-
-if (settingsBtn) settingsBtn.addEventListener('click', loadLlmStatus);
-if (settingsBtn) settingsBtn.addEventListener('click', loadMcpStatus);
-
-// Setup tab navigation
-function setupTabNavigation() {
+function activateTab(name) {
     tabBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Update active tab button
-            tabBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            
-            // Show corresponding tab content
-            tabContents.forEach(content => {
-                content.classList.remove('active');
-                if (content.id === 'tab-' + btn.dataset.tab) {
-                    content.classList.add('active');
-                }
-            });
-        });
+        const active = btn.dataset.tab === name;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
     });
+    tabContents.forEach(content => content.classList.toggle('active', content.id === `tab-${name}`));
+    if (name === 'mcp') loadInstalledMcps();
+    if (name === 'skills') loadInstalledSkills();
 }
 
-// Render LLM mode selector with 3-box switch control
-async function renderModeSelector() {
-    if (!modeOptions) return;
+tabBtns.forEach(btn => btn.addEventListener('click', () => activateTab(btn.dataset.tab)));
 
-    try {
-        const response = await fetch(`${API_BASE}/api/settings/modes`);
-        const data = await response.json();
-        const modes = Object.entries(data.modes || {});
-        const currentMode = data.current_mode || 'local_local';
-        modeConfigsCache = data.modes || {};
+function openSettings(tab) {
+    toggleSidebar(false);
+    loadSettings();
+    const current = document.querySelector('.tab-btn.active')?.dataset.tab || 'llm';
+    activateTab(tab || current);
+    openModal(settingsModal);
+}
 
-        // Set current mode in settings
-        if (settings_llmMode) settings_llmMode.value = currentMode;
+settingsBtn?.addEventListener('click', () => openSettings());
 
-        let html = '';
-        modes.forEach(([key, mode]) => {
-            const isActive = key === currentMode;
-            // Determine color class based on mode type
-            let colorClass = '';
-            if (key === 'local_local') colorClass = 'mode-switch-local_local';
-            if (key === 'local_cloud') colorClass = 'mode-switch-local_cloud';
-            if (key === 'local_remote_local') colorClass = 'mode-switch-local_remote_local';
+[[llmStatusPill, 'llm'], [mcpStatusPill, 'mcp'], [skillsPill, 'skills']].forEach(([pill, tab]) => {
+    if (!pill) return;
+    pill.addEventListener('click', () => openSettings(tab));
+    makeKeyboardClickable(pill, () => openSettings(tab));
+});
 
-            html += `
-                <button type="button" class="mode-switch ${isActive ? 'mode-switch-active' : 'mode-switch-inactive'} ${colorClass}" data-mode="${key}">
-                    <span class="mode-switch-label">${mode.name}</span>
-                    <span class="mode-switch-description">${mode.description}</span>
-                </button>
-            `;
-        });
+async function loadSettings() {
+    const { ok, data: settings } = await fetchJson('/api/settings');
+    if (!ok) return;
+    state.settings = settings;
+    const llm = settings.llm || {};
+    $('settingsLocalModel').value = llm.local_model || 'llama3.2:3b';
+    $('settingsSecondaryModel').value = llm.secondary_model || '';
+    $('settingsSecondaryBaseUrl').value = llm.secondary_base_url || '';
+    $('settingsSecondaryApiKey').value = llm.secondary_api_key || '';
+    $('settingsRemoteBaseUrl').value = llm.remote_base_url || '';
+    $('settingsRemoteApiKey').value = llm.remote_api_key || '';
+    $('settingsRemoteModel').value = llm.remote_model || 'gpt-4o-mini';
+    const gitUrlInput = $('settingsSkillsGitUrl');
+    if (gitUrlInput) gitUrlInput.value = settings.skills?.git_url || '';
+    $('settingsSchedulerEnabled').checked = settings.scheduler?.enabled !== false;
+    $('settingsSchedulerTick').value = settings.scheduler?.tick_seconds || 30;
+    loadLlmStatus();
+    loadMcpStatus();
+}
 
-        modeOptions.innerHTML = html;
-
-        // Add click listeners to every switch (an inactive switch is the
-        // one the user wants to click; the old selector only matched the
-        // already-active switch, so switching did nothing).
-        modeOptions.querySelectorAll(".mode-switch").forEach(switchEl => {
-            switchEl.addEventListener("click", () => {
-                const modeKey = switchEl.dataset.mode;
-                if (settings_llmMode) settings_llmMode.value = modeKey;
-
-                // Update UI based on mode
-                updateModeUI(modeKey);
-
-                // Save mode
-                saveMode(modeKey);
-
-                // Reset all switches to inactive, then activate clicked
-                modeOptions.querySelectorAll(".mode-switch").forEach(s => {
-                    s.classList.remove("mode-switch-active");
-                    s.classList.add("mode-switch-inactive");
-                });
-                switchEl.classList.add("mode-switch-active");
-                switchEl.classList.remove("mode-switch-inactive");
-            });
-        });
-        // Reflect the current mode in the form right away.
-        updateModeUI(currentMode);
-
-    } catch (e) {
-        console.warn("Failed to load modes", e);
-        modeOptions.innerHTML = '<p style="color: var(--color-muted);">Failed to load mode configurations.</p>';
+async function saveSettings() {
+    const statusEl = $('settingsSaveStatus');
+    const { ok, data } = await postJson('/api/settings', {
+        llm: {
+            local_model: $('settingsLocalModel').value,
+            secondary_model: $('settingsSecondaryModel').value,
+            secondary_base_url: $('settingsSecondaryBaseUrl').value,
+            secondary_api_key: $('settingsSecondaryApiKey').value,
+            remote_base_url: $('settingsRemoteBaseUrl').value,
+            remote_api_key: $('settingsRemoteApiKey').value,
+            remote_model: $('settingsRemoteModel').value,
+        },
+        scheduler: {
+            enabled: $('settingsSchedulerEnabled').checked,
+            tick_seconds: parseInt($('settingsSchedulerTick').value, 10) || 30,
+        },
+    });
+    if (ok && data.success) {
+        setStatus(statusEl, 'Settings saved ✓', true);
+        await loadSettings();
+        setTimeout(() => closeModal(settingsModal), 900);
+    } else {
+        setStatus(statusEl, 'Failed to save settings.', false);
     }
 }
 
+$('settingsForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = $('settingsSaveBtn');
+    const original = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+        await saveSettings();
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = original;
+    }
+});
 
-// Show only the form fields the active mode actually uses. Field lists
-// come from GET /api/settings/modes (the backend's MODE_CONFIGS); the
-// remote/cloud block shows only for local_cloud. Every lookup is guarded
-// so a missing group can never throw.
-let modeConfigsCache = {};
+/* ── Settings: LLM mode ──────────────────────────────────────────── */
 
 function setLlmsCollapsed(collapsed) {
-    const body = document.getElementById('llmsBody');
-    const btn = document.getElementById('llmsCollapseBtn');
+    const body = $('llmsBody');
+    const btn = $('llmsCollapseBtn');
     if (body) body.style.display = collapsed ? 'none' : '';
     if (btn) {
         btn.setAttribute('aria-expanded', String(!collapsed));
-        btn.innerHTML = collapsed ? '&#9654;' : '&#9650;';
+        btn.innerHTML = `<i class="fa-solid fa-chevron-${collapsed ? 'right' : 'down'}" aria-hidden="true"></i>`;
         btn.title = collapsed ? 'Expand local models' : 'Collapse local models';
     }
 }
-const llmsCollapseBtn = document.getElementById('llmsCollapseBtn');
-if (llmsCollapseBtn) llmsCollapseBtn.addEventListener('click', () => {
-    const body = document.getElementById('llmsBody');
-    setLlmsCollapsed(!(body && body.style.display === 'none'));
+
+$('llmsCollapseBtn')?.addEventListener('click', () => {
+    setLlmsCollapsed($('llmsBody').style.display !== 'none');
 });
 
-// Mode sections: the LLMs browser collapses so the Cloud / Remote Local
-// section below the divider takes focus in those modes; Local + Local
-// hides the section entirely (the two slots above are the whole story).
 function updateModeUI(modeKey) {
     const show = (id, visible) => {
-        const el = document.getElementById(id);
+        const el = $(id);
         if (el) el.style.display = visible ? '' : 'none';
     };
     const isCloud = modeKey === 'local_cloud';
@@ -1476,10 +944,8 @@ function updateModeUI(modeKey) {
     const showSection = isCloud || isRemoteLocal;
     show('modeSectionDivider', showSection);
     show('modeSection', showSection);
-    const title = document.getElementById('modeSectionTitle');
-    const hint = document.getElementById('modeSectionHint');
-    if (title) title.textContent = isCloud ? 'Cloud' : 'Remote Local';
-    if (hint) hint.textContent = isCloud
+    $('modeSectionTitle').textContent = isCloud ? 'Cloud' : 'Remote Local';
+    $('modeSectionHint').textContent = isCloud
         ? 'When the local model fails, chat falls back to the cloud endpoint below (secondary endpoint first, remote settings as fallback).'
         : 'When the local model fails, chat falls back to the Ollama host below.';
     show('modeSubCloud', isCloud);
@@ -1489,530 +955,786 @@ function updateModeUI(modeKey) {
     show('group-remote-base-url', isCloud);
     show('group-remote-api-key', isCloud);
     show('group-remote-model', isCloud);
-    const secHint = document.getElementById('secondaryModelHint');
-    if (secHint) secHint.textContent = isCloud
+    $('secondaryModelHint').textContent = isCloud
         ? 'Cloud model used when the local model fails.'
         : isRemoteLocal
-        ? 'Model on the remote Ollama host.'
-        : 'Second local model, for redundancy or specialized tasks.';
+            ? 'Model on the remote Ollama host.'
+            : 'Second local model, for redundancy or specialized tasks.';
     setLlmsCollapsed(showSection);
 }
 
 async function saveMode(mode) {
-    try {
-        await fetch(`${API_BASE}/api/settings/modes`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode })
-        });
-    } catch (e) {
-        console.warn('Failed to save mode', e);
-    }
+    const { ok } = await postJson('/api/settings/modes', { mode });
+    if (!ok) toast('Could not save the LLM mode.', 'error');
 }
 
-// First paint: show LLM readiness immediately, before any chat attempt.
-loadLlmStatus();
-
-// Render MCP Marketplace
-// ── MCP Marketplace: Local (this host's MCP service) + Remote ────────
-// The old tab called /api/mcp/list, /api/mcp/import/<id> and
-// /api/mcp/disable/<id> — none of which existed — so it always failed,
-// and there was no way to add an MCP at all. These routes exist now.
-let remoteMcpCache = {};
-let remoteMcpList = [];
-let localMcpList = [];
-let mcpFilter = 'all';
-
-// ── MCP Marketplace: one grid for local + remote, filtered by pills ──
-// Local cards show their enabled state (green, like loaded models);
-// remote cards are the MCP service's built-ins plus the leaderboard
-// snapshot. Search filters the cached lists (no refetch per keystroke).
-async function loadMcps() {
-    try {
-        const [localRes, remoteRes] = await Promise.all([
-            fetch(`${API_BASE}/api/mcp/local`),
-            fetch(`${API_BASE}/api/mcp/remote`),
-        ]);
-        const localData = await localRes.json();
-        const remoteData = await remoteRes.json();
-        localMcpList = localData.mcps || [];
-        remoteMcpList = remoteData.mcps || [];
-        remoteMcpCache = {};
-        remoteMcpList.forEach(m => { remoteMcpCache[m.id] = m; });
-    } catch (e) {
-        console.warn('Failed to load MCPs', e);
-    }
-    renderMcpGrid();
-}
-
-function renderMcpFilterChips() {
-    const row = document.getElementById('mcpFilterChips');
-    if (!row) return;
-    const filters = [['all', 'All'], ['local', 'Local'], ['remote', 'Remote']];
-    row.innerHTML = filters.map(([key, label]) => `<button type="button" class="chip${mcpFilter === key ? ' active' : ''}" data-mcp-filter="${key}">${label}</button>`).join('');
-    row.querySelectorAll('[data-mcp-filter]').forEach(btn => btn.addEventListener('click', () => {
-        mcpFilter = btn.dataset.mcpFilter;
-        renderMcpFilterChips();
-        renderMcpGrid();
-    }));
-}
-
-function renderMcpGrid() {
-    const grid = document.getElementById('mcpGrid');
-    if (!grid) return;
-    const query = (document.getElementById('mcpSearch')?.value || '').trim().toLowerCase();
-    const local = localMcpList.map(m => ({ ...m, _kind: 'local' }));
-    const remote = remoteMcpList.map(m => ({ ...m, _kind: 'remote' }));
-    let shown = mcpFilter === 'local' ? local : mcpFilter === 'remote' ? remote : [...local, ...remote];
-    if (query) {
-        shown = shown.filter(m => [m.name, m.description, m.source, m.author, m.category].join(' ').toLowerCase().includes(query));
-    }
-    const note = document.getElementById('mcpGridNote');
-    if (note) note.textContent = `${localMcpList.length} local · ${remoteMcpList.length} remote`;
-    if (!shown.length) {
-        grid.innerHTML = query
-            ? `<p style="color: var(--color-muted);">No MCPs match '${escapeHtml(query)}'.</p>`
-            : '<p style="color: var(--color-muted);">No MCPs found.</p>';
+async function renderModeSelector() {
+    if (!modeOptions) return;
+    const { ok, data } = await fetchJson('/api/settings/modes');
+    if (!ok) {
+        modeOptions.innerHTML = '<p class="llm-status">Failed to load mode configurations.</p>';
         return;
     }
-    grid.innerHTML = shown.map(mcp => {
-        if (mcp._kind === 'local') {
-            return `
-            <div class="mcp-card${mcp.enabled === false ? '' : ' enabled'}">
-                <div class="mcp-header">
-                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
-                    <span class="mcp-badge mcp-badge-local">Local</span>
-                    ${mcp.enabled === false ? '<span class="mcp-badge status-inactive">Disabled</span>' : ''}
-                </div>
-                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
-                <div class="mcp-description">${escapeHtml(mcp.endpoint || '')} · ${escapeHtml(mcp.method || 'GET')}</div>
-                <div class="mcp-actions">
-                    <button class="btn-icon" data-mcp-kind="local" data-mcp-action="${mcp.enabled === false ? 'enable' : 'disable'}" data-mcp-id="${escapeHtml(mcp.id)}" title="${mcp.enabled === false ? 'Enable' : 'Disable'}" aria-label="${mcp.enabled === false ? 'Enable MCP' : 'Disable MCP'}">${mcp.enabled === false ? '&#10003;' : '&#10006;'}</button>
-                    <button class="btn-icon" data-mcp-kind="local" data-mcp-action="remove" data-mcp-id="${escapeHtml(mcp.id)}" title="Remove" aria-label="Remove MCP">&#128465;</button>
-                </div>
-            </div>`;
-        }
-        const isLeaderboard = mcp.source === 'Leaderboard';
-        const hasEndpoint = Boolean(mcp.endpoint);
-        const imported = mcp.imported === true || mcp.imported === 'true';
-        return `
-            <div class="mcp-card">
-                <div class="mcp-header">
-                    <span class="mcp-name">${escapeHtml(mcp.name)}</span>
-                    ${isLeaderboard ? `<span class="mcp-badge mcp-badge-leaderboard">#${mcp.rank}</span>` : '<span class="mcp-badge mcp-badge-remote">Remote</span>'}
-                </div>
-                <div class="mcp-description">${escapeHtml(mcp.description || '')}</div>
-                <div class="mcp-description">${isLeaderboard ? `${escapeHtml(mcp.author || '')} · ${escapeHtml(mcp.category || '')} · ★ ${escapeHtml(mcp.stars || '')}` : `Source: ${escapeHtml(mcp.source || '')}${mcp.auth_note ? ` · ${escapeHtml(mcp.auth_note)}` : ''}`}</div>
-                <div class="mcp-actions">
-                    ${hasEndpoint ? `<button type="button" class="btn-save small ${imported ? 'btn-disabled' : ''}" data-mcp-kind="remote" data-mcp-action="import" data-mcp-id="${escapeHtml(mcp.id)}" ${imported ? 'disabled title="Already installed in Local MCPs"' : ''}>${imported ? 'Imported' : 'Import'}</button>` : ''}
-                    ${isLeaderboard && mcp.source_url ? `<button type="button" class="btn-secondary small" data-mcp-kind="remote" data-mcp-action="view" data-mcp-id="${escapeHtml(mcp.id)}">View</button>` : ''}
-                    ${!hasEndpoint && mcp.source_url ? `<button type="button" class="btn-save small" data-mcp-kind="remote" data-mcp-action="use" data-mcp-id="${escapeHtml(mcp.id)}">Install</button>` : ''}
-                </div>
-            </div>`;
-    }).join('');
-    grid.querySelectorAll('[data-mcp-action]').forEach(btn => btn.addEventListener('click', async (evt) => {
-        const action = evt.currentTarget.dataset.mcpAction;
-        const kind = evt.currentTarget.dataset.mcpKind;
-        const id = evt.currentTarget.dataset.mcpId;
-        if (kind === 'local') {
-            if (action === 'remove') {
-                if (!confirm('Remove this MCP?')) return;
-                await fetch(`${API_BASE}/api/mcps/${encodeURIComponent(id)}`, { method: 'DELETE' });
-            } else {
-                await fetch(`${API_BASE}/api/mcp/${action}/${encodeURIComponent(id)}`, { method: 'POST' });
-            }
-            await loadMcps();
-            await loadMcpStatus();
-            return;
-        }
-        const entry = remoteMcpCache[id];
-        if (!entry) return;
-        if (action === 'use') {
-            // The cached entry may lack an endpoint (leaderboard entries
-            // ship with endpoint=""). Re-fetch the remote catalogue —
-            // the backend now enriches leaderboard entries with marketplace
-            // endpoints — so the form is prefilled with a real URL.
-            if (!entry.endpoint) {
-                const statusEl = document.getElementById('mcpAddStatus');
-                if (statusEl) statusEl.textContent = `Resolving ${entry.name}…`;
-                try {
-                    const res = await fetch(`${API_BASE}/api/mcp/remote`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        const found = (data.mcps || []).find(m => m.id === id);
-                        if (found && found.endpoint) {
-                            entry = found;
-                            remoteMcpCache[id] = entry;
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Failed to resolve MCP endpoint from catalogue', e);
-                }
-            }
-            prefillMcpForm(entry);
-        } else if (action === 'import') {
-            const isMarketplaceImport = kind === 'remote';
-            const btn = isMarketplaceImport ? evt.currentTarget : null;
-            const statusEl = document.getElementById('mcpAddStatus');
-            if (isMarketplaceImport && btn) {
-                btn.disabled = true;
-                btn.textContent = 'Importing…';
-                if (statusEl) statusEl.textContent = `Importing ${entry.name}…`;
-            } else {
-                setMcpAddCollapsed(false);
-                if (statusEl) statusEl.textContent = `Importing ${entry.name}…`;
-            }
-            try {
-                const res = await fetch(`${API_BASE}/api/mcp/import/${encodeURIComponent(entry.id)}`, { method: 'POST' });
-                const result = await res.json();
-                if (statusEl) statusEl.textContent = res.ok ? `'${entry.name}' imported to Local MCPs.` : (result.error || 'Import failed.');
-                await loadMcps();
-                await loadMcpStatus();
-            } catch (e) {
-                if (statusEl) statusEl.textContent = `Import failed: ${e.message}`;
-            } finally {
-                if (isMarketplaceImport && btn) {
-                    btn.disabled = false;
-                    btn.textContent = entry.imported ? 'Imported' : 'Import →';
-                }
-            }
-        } else if (action === 'view') {
-            window.open(entry.source_url, '_blank', 'noopener');
-        }
-    }));
+    state.mode = data.current_mode || 'local_local';
+    modeOptions.innerHTML = Object.entries(data.modes || {}).map(([key, mode]) => `
+        <button type="button" class="mode-switch ${key === state.mode ? 'mode-switch-active' : 'mode-switch-inactive'} mode-switch-${escapeHtml(key)}" data-mode="${escapeHtml(key)}" aria-pressed="${key === state.mode}">
+            <span class="mode-switch-label">${escapeHtml(mode.name)}</span>
+            <span class="mode-switch-description">${escapeHtml(mode.description)}</span>
+        </button>`).join('');
+    updateModeUI(state.mode);
 }
 
-const mcpSearch = document.getElementById('mcpSearch');
-if (mcpSearch) mcpSearch.addEventListener('input', renderMcpGrid);
+modeOptions?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mode-switch');
+    if (!btn) return;
+    state.mode = btn.dataset.mode;
+    modeOptions.querySelectorAll('.mode-switch').forEach(s => {
+        const active = s === btn;
+        s.classList.toggle('mode-switch-active', active);
+        s.classList.toggle('mode-switch-inactive', !active);
+        s.setAttribute('aria-pressed', String(active));
+    });
+    updateModeUI(state.mode);
+    saveMode(state.mode);
+});
 
-function setMcpAddCollapsed(collapsed) {
-    const body = document.getElementById('mcpAddBody');
-    const btn = document.getElementById('mcpAddCollapseBtn');
-    if (body) body.style.display = collapsed ? 'none' : '';
-    if (btn) {
-        btn.setAttribute('aria-expanded', String(!collapsed));
-        btn.innerHTML = collapsed ? '&#9654;' : '&#9650;';
-        btn.title = collapsed ? 'Expand add local MCP' : 'Collapse add local MCP';
+/* ── Settings: LLM and MCP status pills ──────────────────────────── */
+
+async function loadLlmStatus() {
+    const line = $('llmStatusLine');
+    const banner = $('llmBanner');
+    const { ok, data: status } = await fetchJson('/api/llm/status');
+    if (!ok) {
+        setPill(llmStatusPill, 'LLM status unknown', 'warn');
+        return;
+    }
+    let text;
+    let level;
+    let bannerText = '';
+    if (!status.running) {
+        text = 'Ollama offline';
+        level = 'bad';
+        bannerText = 'Ollama is offline — start it with `ollama serve`, then pull a model from Settings → Local Models.';
+        if (line) { line.textContent = status.error || 'Ollama is not reachable.'; line.className = 'llm-status status-bad'; }
+    } else if (!status.configured_model_installed) {
+        text = 'Ollama · model missing';
+        level = 'warn';
+        bannerText = `Ollama is running, but '${status.configured_model}' is not installed — pull it from Settings → Local Models.`;
+        if (line) { line.textContent = bannerText; line.className = 'llm-status status-bad'; }
+    } else {
+        text = `Ollama · ${status.configured_model}`;
+        level = 'ok';
+        if (line) { line.textContent = `Ollama is running with ${status.models.length} model(s) installed.`; line.className = 'llm-status status-ok'; }
+    }
+    setPill(llmStatusPill, text, level);
+    if (banner) {
+        banner.style.display = bannerText ? 'block' : 'none';
+        banner.textContent = bannerText;
+    }
+    refreshModelBrowser(status);
+}
+
+async function loadMcpStatus() {
+    const { ok, data: status } = await fetchJson('/api/mcp/status');
+    if (!ok) {
+        setPill(mcpStatusPill, 'MCP status unknown', 'warn');
+        return;
+    }
+    if (!status.running) setPill(mcpStatusPill, 'MCP offline', 'bad');
+    else if (typeof status.count === 'number') setPill(mcpStatusPill, `MCP · ${status.count} server${status.count === 1 ? '' : 's'}`, 'ok');
+    else setPill(mcpStatusPill, 'MCP · running', 'ok');
+}
+
+/* ── Settings: model browser and pull modal ──────────────────────── */
+
+async function refreshModelBrowser(status) {
+    if (!$('modelCatalogGrid') && !$('loadedModelsGrid')) return;
+    const [statusRes, catalogRes, settingsRes] = await Promise.all([
+        status ? Promise.resolve({ ok: true, data: status }) : fetchJson('/api/llm/status'),
+        fetchJson('/api/llm/catalog'),
+        fetchJson('/api/settings'),
+    ]);
+    if (!catalogRes.ok) return;
+    const browser = state.models;
+    browser.catalog = catalogRes.data;
+    browser.installed = statusRes.data.models || [];
+    browser.primary = settingsRes.data.llm?.local_model || '';
+    browser.secondary = settingsRes.data.llm?.secondary_model || '';
+    $('settingsLocalModel').value = browser.primary;
+    $('settingsSecondaryModel').value = browser.secondary;
+    renderModelBrowser();
+}
+
+function loadedModelCard(name, { primary, secondary }) {
+    const safe = escapeHtml(name);
+    let slot = '';
+    if (name === primary) {
+        slot = `<span class="mcp-badge mcp-badge-local">Primary</span>
+            <button type="button" class="btn-icon" data-action="unset" data-slot="primary" data-model="${safe}" title="Unset primary" aria-label="Unset primary model"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
+    } else if (name === secondary) {
+        slot = `<span class="mcp-badge mcp-badge-local">Secondary</span>
+            <button type="button" class="btn-icon" data-action="unset" data-slot="secondary" data-model="${safe}" title="Unset secondary" aria-label="Unset secondary model"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
+    } else if (!(primary && secondary)) {
+        slot = `<select data-assign="${safe}" aria-label="Assign model slot">
+            <option value="">Assign…</option>
+            <option value="primary">Primary</option>
+            <option value="secondary">Secondary</option>
+        </select>`;
+    }
+    return `<div class="model-card loaded">
+        <div class="model-header">
+            <span class="model-name">${safe}</span>
+            <span class="mcp-badge status-active">Loaded</span>
+        </div>
+        <div class="model-actions">
+            ${slot}
+            <button type="button" class="btn-icon" data-action="unload" data-model="${safe}" title="Unload model" aria-label="Unload model"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+        </div>
+    </div>`;
+}
+
+function renderModelBrowser() {
+    const { catalog, installed, primary, secondary, filter } = state.models;
+    if (!catalog) return;
+    const installedSet = new Set(installed);
+
+    const chipsBox = $('modelFilterChips');
+    if (chipsBox) {
+        const chips = ['all', ...(catalog.capabilities || [])];
+        chipsBox.innerHTML = chips.map(c =>
+            `<button type="button" class="chip${c === filter ? ' active' : ''}" data-chip="${escapeHtml(c)}">${c === 'all' ? 'All' : escapeHtml(c)}</button>`
+        ).join('');
+    }
+
+    const loadedGrid = $('loadedModelsGrid');
+    if (loadedGrid) {
+        loadedGrid.innerHTML = installed.length
+            ? installed.map(name => loadedModelCard(name, { primary, secondary })).join('')
+            : '<p class="llm-status">Nothing loaded yet — pull a model below.</p>';
+    }
+
+    const grid = $('modelCatalogGrid');
+    if (grid) {
+        const shown = (catalog.models || []).filter(m => filter === 'all' || (m.capabilities || []).includes(filter));
+        grid.innerHTML = shown.map(m => {
+            const isInstalled = installedSet.has(m.name);
+            const safe = escapeHtml(m.name);
+            return `<div class="model-card${isInstalled ? ' loaded' : ''}"${isInstalled ? '' : ` data-pull="${safe}"`}>
+                <div class="model-header">
+                    <span class="model-name">${safe}</span>
+                    <span class="model-size">${escapeHtml(m.size_gb)} GB</span>
+                    ${m.name === catalog.default_model ? '<span class="mcp-badge mcp-badge-local">Default</span>' : ''}
+                    ${isInstalled ? '<span class="mcp-badge status-active">Loaded</span>' : ''}
+                </div>
+                <div class="model-tags">${(m.capabilities || []).map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}</div>
+                <div class="model-blurb">${escapeHtml(m.blurb || '')}</div>
+                ${isInstalled ? '' : `<button type="button" class="btn-save small" data-pull="${safe}"><i class="fa-solid fa-download" aria-hidden="true"></i> Pull</button>`}
+            </div>`;
+        }).join('') || '<p class="llm-status">No models match this filter.</p>';
+    }
+
+    const note = $('catalogNote');
+    if (note) {
+        note.textContent = (catalog.size_cap_gb
+            ? `Showing models up to ${catalog.size_cap_gb} GB (available RAM: ${catalog.ram_available_gb} GB).` +
+              (catalog.hidden_count ? ` ${catalog.hidden_count} larger model(s) hidden.` : '')
+            : 'Host RAM size unknown — showing all models.') +
+            ` Default model for this host: ${catalog.default_model}.`;
+    }
+    const linkBox = $('ollamaSearchLink');
+    if (linkBox && catalog.ollama_search_url) {
+        linkBox.innerHTML = `<a href="${escapeHtml(catalog.ollama_search_url)}" target="_blank" rel="noopener">Browse all models on ollama.com <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>`;
     }
 }
-const mcpAddCollapseBtn = document.getElementById('mcpAddCollapseBtn');
-if (mcpAddCollapseBtn) mcpAddCollapseBtn.addEventListener('click', () => {
-    const body = document.getElementById('mcpAddBody');
-    setMcpAddCollapsed(!(body && body.style.display === 'none'));
+
+async function patchLlmSettings(llm) {
+    await postJson('/api/settings', { llm });
+    await refreshModelBrowser();
+    await loadLlmStatus();
+}
+
+$('modelFilterChips')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.models.filter = chip.dataset.chip;
+    renderModelBrowser();
 });
-renderMcpFilterChips();
+
+[$('loadedModelsGrid'), $('modelCatalogGrid')].forEach(grid => grid?.addEventListener('click', async (e) => {
+    const unload = e.target.closest('[data-action="unload"]');
+    if (unload) {
+        const model = unload.dataset.model;
+        if (!confirm(`Unload '${model}'? This deletes it from Ollama.`)) return;
+        const { ok, data } = await fetchJson(`/api/llm/models/${encodeURIComponent(model)}`, { method: 'DELETE' });
+        if (!ok) toast(data.error || 'Could not unload the model.', 'error');
+        await refreshModelBrowser();
+        await loadLlmStatus();
+        return;
+    }
+    const unset = e.target.closest('[data-action="unset"]');
+    if (unset) {
+        await patchLlmSettings(unset.dataset.slot === 'primary' ? { local_model: '' } : { secondary_model: '' });
+        return;
+    }
+    const pull = e.target.closest('[data-pull]');
+    if (pull && grid === $('modelCatalogGrid')) openPullModal(pull.dataset.pull);
+}));
+
+[$('loadedModelsGrid')].forEach(grid => grid?.addEventListener('change', async (e) => {
+    const select = e.target.closest('select[data-assign]');
+    if (!select || !select.value) return;
+    const model = select.dataset.assign;
+    const { primary, secondary } = state.models;
+    const patch = {};
+    if (select.value === 'primary') {
+        patch.local_model = model;
+        if (secondary === model) patch.secondary_model = '';
+    } else {
+        patch.secondary_model = model;
+        if (primary === model) patch.local_model = '';
+    }
+    await patchLlmSettings(patch);
+}));
+
+let pullPollTimer = null;
+
+function stopPullPolling() {
+    if (pullPollTimer) {
+        clearInterval(pullPollTimer);
+        pullPollTimer = null;
+    }
+}
+
+async function openPullModal(model) {
+    const statusEl = $('pullModalStatus');
+    $('pullModalModel').textContent = model;
+    statusEl.textContent = 'Starting pull…';
+    openModal(pullModal);
+    const { ok, data } = await postJson('/api/llm/pull', { model });
+    if (!ok) {
+        statusEl.textContent = data.error || 'Pull failed to start.';
+        return;
+    }
+    statusEl.textContent = (data.job && data.job.detail) || 'Pulling…';
+    stopPullPolling();
+    pullPollTimer = setInterval(pollPullModal, 2000);
+}
+
+async function pollPullModal() {
+    if (!pullModal.classList.contains('active')) {
+        stopPullPolling();
+        return;
+    }
+    const { ok, data } = await fetchJson('/api/llm/pull');
+    const statusEl = $('pullModalStatus');
+    if (!ok) {
+        stopPullPolling();
+        statusEl.textContent = 'Pull status check failed.';
+        return;
+    }
+    const job = data.job || {};
+    statusEl.textContent = job.detail || '';
+    if (job.state === 'done' || job.state === 'error') {
+        stopPullPolling();
+        await refreshModelBrowser();
+        await loadLlmStatus();
+    }
+}
+
+$('pullModalClose')?.addEventListener('click', () => closeModal(pullModal));
+
+/* ── Marketplace shared helpers (Skills and MCPs) ────────────────── */
+
+const categoryOf = (item) => String(item.category || 'other').toLowerCase();
+
+function switchSubTab(tabId, panelId) {
+    const root = $(tabId);
+    if (!root) return;
+    root.querySelectorAll('.sub-tab').forEach(btn => {
+        const active = btn.dataset.subtab === panelId;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
+    });
+    root.querySelectorAll('.sub-panel').forEach(panel => panel.classList.toggle('active', panel.id === panelId));
+    if (panelId === 'skills-marketplace') loadSkillMarket();
+    if (panelId === 'mcps-marketplace') loadMcpMarket();
+}
+
+document.querySelectorAll('.sub-tab').forEach(btn => {
+    btn.addEventListener('click', () => switchSubTab(btn.closest('.tab-content').id, btn.dataset.subtab));
+});
+
+document.querySelectorAll('[data-goto-subtab]').forEach(btn => {
+    btn.addEventListener('click', () => switchSubTab(btn.closest('.tab-content').id, btn.dataset.gotoSubtab));
+});
+
+function metaHtml(item) {
+    const meta = [];
+    if (item.author) meta.push(`<span><i class="fa-regular fa-user" aria-hidden="true"></i> ${escapeHtml(item.author)}</span>`);
+    if (item.category) meta.push(`<span><i class="fa-solid fa-tag" aria-hidden="true"></i> ${escapeHtml(item.category)}</span>`);
+    if (item.stars) meta.push(`<span><i class="fa-solid fa-star" aria-hidden="true"></i> ${escapeHtml(item.stars)}</span>`);
+    return meta.length ? `<div class="market-item-meta">${meta.join('')}</div>` : '';
+}
+
+function isInstalled(kind, item) {
+    if (kind === 'skills') {
+        const names = new Set(state.skills.installed.map(s => s.name.toLowerCase()));
+        return names.has(String(item.name || '').toLowerCase());
+    }
+    const installed = state.mcps.installed;
+    return installed.some(m => m.id === item.id || String(m.name).toLowerCase() === String(item.name || '').toLowerCase());
+}
+
+function marketItemHtml(kind, item) {
+    const id = item.id || item.name;
+    const installed = isInstalled(kind, item);
+    const needsForm = kind === 'mcps' && !item.endpoint;
+    const label = installed ? 'Installed' : needsForm ? 'Configure and add' : 'Install';
+    const icon = installed ? 'fa-check' : needsForm ? 'fa-plus' : 'fa-download';
+    const safeId = escapeHtml(id);
+    return `
+    <article class="market-item${installed ? ' is-installed' : ''}">
+        <div class="market-item-body">
+            <h4 class="market-item-title">${escapeHtml(item.name)}</h4>
+            <p class="market-item-desc">${escapeHtml(item.description || '')}</p>
+            ${metaHtml(item)}
+        </div>
+        <div class="item-actions">
+            ${item.source_url ? `<button type="button" class="icon-action" data-market-action="view" data-market-kind="${kind}" data-market-id="${safeId}" title="Open source" aria-label="Open ${escapeHtml(item.name)} source"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>` : ''}
+            <button type="button" class="icon-action${installed ? ' done' : ''}" data-market-action="install" data-market-kind="${kind}" data-market-id="${safeId}" title="${label}" aria-label="${label} ${escapeHtml(item.name)}"${installed ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i></button>
+        </div>
+    </article>`;
+}
+
+function renderMarket(kind) {
+    const cfg = MARKET[kind];
+    const store = state[kind];
+    const list = $(cfg.list);
+    if (!list) return;
+    const query = ($(cfg.search)?.value || '').trim().toLowerCase();
+
+    const counts = {};
+    store.market.forEach(item => {
+        const cat = categoryOf(item);
+        counts[cat] = (counts[cat] || 0) + 1;
+    });
+    const chips = $(cfg.chips);
+    if (chips) {
+        chips.innerHTML = Object.keys(counts).sort().map(cat =>
+            `<button type="button" class="chip${store.filter === cat ? ' active' : ''}" data-market-chip="${escapeHtml(cat)}" aria-pressed="${store.filter === cat}">${escapeHtml(cat)} <span class="chip-count">${counts[cat]}</span></button>`
+        ).join('');
+    }
+
+    const shown = store.market.filter(item =>
+        (store.filter === 'all' || categoryOf(item) === store.filter) &&
+        (!query || `${item.name} ${item.description || ''} ${item.author || ''} ${item.category || ''}`.toLowerCase().includes(query)));
+    list.innerHTML = shown.length
+        ? shown.map(item => marketItemHtml(kind, item)).join('')
+        : `<p class="list-empty">${store.market.length ? 'No matches.' : 'Nothing to show yet.'}</p>`;
+
+    const note = $(cfg.note);
+    if (note) note.textContent = store.market.length ? `${shown.length} of ${store.market.length} shown` : '';
+}
+
+function bindMarket(kind, onInstall, onView) {
+    const cfg = MARKET[kind];
+    $(cfg.search)?.addEventListener('input', debounce(() => renderMarket(kind), 150));
+    $(cfg.chips)?.addEventListener('click', (e) => {
+        const chip = e.target.closest('[data-market-chip]');
+        if (!chip) return;
+        const store = state[kind];
+        store.filter = store.filter === chip.dataset.marketChip ? 'all' : chip.dataset.marketChip;
+        renderMarket(kind);
+    });
+    $(cfg.list)?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-market-action]');
+        if (!btn || btn.disabled) return;
+        const item = state[kind].market.find(i => String(i.id || i.name) === btn.dataset.marketId);
+        if (!item) return;
+        if (btn.dataset.marketAction === 'view') onView(item);
+        else onInstall(item, btn);
+    });
+}
+
+function openExternal(url) {
+    if (/^https?:\/\//i.test(url || '')) window.open(url, '_blank', 'noopener');
+}
+
+function withBusyButton(btn, fn) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>';
+    return Promise.resolve(fn()).finally(() => {
+        if (btn.isConnected) {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+}
+
+/* ── Skills ──────────────────────────────────────────────────────── */
+
+function installedSkillHtml(skill) {
+    const badge = { discovered: ['Discovered', 'local'], saved: ['Saved', 'saved'], env: ['Env', 'env'] }[skill.kind];
+    const id = escapeHtml(skill.id);
+    const control = skill.kind === 'discovered'
+        ? `<button type="button" class="switch${skill.active ? ' on' : ''}" role="switch" aria-checked="${skill.active}" data-skill-action="toggle" data-skill-id="${id}" aria-label="${skill.active ? 'Disable' : 'Enable'} ${escapeHtml(skill.name)}" title="${skill.active ? 'Disable' : 'Enable'}"></button>`
+        : '';
+    const removable = skill.kind !== 'discovered'
+        ? `<button type="button" class="icon-action danger" data-skill-action="remove" data-skill-kind="${skill.kind}" data-skill-id="${id}" title="Remove" aria-label="Remove ${escapeHtml(skill.name)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`
+        : '';
+    return `
+    <article class="market-item installed${skill.active ? '' : ' is-disabled'}">
+        <div class="market-item-body">
+            <h4 class="market-item-title">${escapeHtml(skill.name)} <span class="skill-badge skill-badge-${badge[1]}">${badge[0]}</span></h4>
+            <p class="market-item-desc">${escapeHtml(skill.description || '')}</p>
+        </div>
+        <div class="item-actions">${control}${removable}</div>
+    </article>`;
+}
+
+function updateSkillsPill() {
+    const active = state.skills.installed.filter(s => s.active).length;
+    setPill(skillsPill, `Skills · ${active}`, 'ok');
+}
+
+function renderInstalledSkills() {
+    const list = $('skillList');
+    if (!list) return;
+    const query = ($('skillInstalledSearch')?.value || '').trim().toLowerCase();
+    const all = state.skills.installed;
+    const shown = all.filter(s => !query || `${s.name} ${s.description}`.toLowerCase().includes(query));
+    list.innerHTML = shown.length
+        ? shown.map(installedSkillHtml).join('')
+        : `<p class="list-empty">${all.length ? 'No matches.' : 'No skills installed'}</p>`;
+    const active = all.filter(s => s.active).length;
+    setStatus($('skillsGridNote'), all.length ? `${all.length} skill(s) · ${active} active` : '', all.length ? true : undefined);
+    updateSkillsPill();
+}
+
+async function loadInstalledSkills() {
+    const [discovered, saved, env] = await Promise.all([
+        fetchJson('/api/skills/active'),
+        fetchJson('/api/skills'),
+        fetchJson('/api/env/vars?prefix=SKILL_'),
+    ]);
+    state.skills.installed = [
+        ...(discovered.data.skills || []).map(s => ({
+            kind: 'discovered', id: s.id || s.name, name: s.name || '', description: s.description || '', active: s.active !== false,
+        })),
+        ...(saved.data.skills || []).map(s => ({
+            kind: 'saved', id: s.id, name: s.name || '', description: s.description || '', active: true,
+        })),
+        ...Object.entries(env.data.vars || {}).map(([key, value]) => ({
+            kind: 'env', id: key, name: key.replace(/^SKILL_/, '').replace(/_/g, ' '), description: String(value), active: true,
+        })),
+    ];
+    renderInstalledSkills();
+    if (state.skills.marketLoaded) renderMarket('skills');
+}
+
+async function loadSkillMarket() {
+    if (state.skills.marketLoaded) return;
+    $('skillMarketList').innerHTML = '<p class="list-empty"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading…</p>';
+    const { ok, data } = await fetchJson('/api/skills/leaderboard');
+    if (!ok) {
+        $('skillMarketList').innerHTML = '<p class="list-empty">Could not load the marketplace.</p>';
+        return;
+    }
+    state.skills.market = data.skills || [];
+    state.skills.marketMeta = data;
+    state.skills.marketLoaded = true;
+    const link = $('skillMarketLink');
+    if (link && /^https?:\/\//i.test(data.source_url || '')) {
+        link.href = data.source_url;
+        link.hidden = false;
+    }
+    renderMarket('skills');
+}
+
+async function installMarketSkill(item, btn) {
+    await withBusyButton(btn, async () => {
+        const { ok, data } = await postJson('/api/skills', {
+            name: item.name,
+            description: item.description || '',
+            skills: [],
+            abilities: [],
+            system_prompt: '',
+        });
+        if (!ok) {
+            toast(`Install failed: ${data.error || 'server error'}`, 'error');
+            return;
+        }
+        toast(`'${item.name}' installed.`, 'success');
+        await loadInstalledSkills();
+        await loadSkillsForNewBot();
+    });
+}
+
+bindMarket('skills', installMarketSkill, (item) => openExternal(item.source_url));
+
+$('skillInstalledSearch')?.addEventListener('input', debounce(renderInstalledSkills, 150));
+
+$('skillList')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-skill-action]');
+    if (!btn) return;
+    const id = btn.dataset.skillId;
+    if (btn.dataset.skillAction === 'toggle') {
+        const { ok, data } = await postJson(`/api/skills/toggle/${encodeURIComponent(id)}`);
+        if (!ok) toast(data.error || 'Could not change the skill.', 'error');
+    } else {
+        if (!confirm('Remove this skill?')) return;
+        const kind = btn.dataset.skillKind;
+        const result = kind === 'env'
+            ? await postJson(`/api/env/disable/${encodeURIComponent(id)}`)
+            : await fetchJson(`/api/skills/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!result.ok) toast(result.data.error || 'Could not remove the skill.', 'error');
+        else await loadSkillsForNewBot();
+    }
+    await loadInstalledSkills();
+});
+
+$('skillCreateBtn')?.addEventListener('click', () => {
+    $('skillForm').reset();
+    openModal(skillModal);
+});
+
+$('skillForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const split = (value) => value.split(',').map(s => s.trim()).filter(Boolean);
+    const { ok, data } = await postJson('/api/skills', {
+        name: $('skillName').value,
+        description: $('skillDescription').value,
+        skills: split($('skillSkills').value),
+        abilities: split($('skillAbilities').value),
+        system_prompt: $('skillSystemPrompt').value,
+    });
+    if (!ok) {
+        toast(data.error || 'Could not save the skill.', 'error');
+        return;
+    }
+    closeModal(skillModal);
+    toast('Skill saved.', 'success');
+    await loadInstalledSkills();
+    await loadSkillsForNewBot();
+});
+
+$('skillsSyncToggleBtn')?.addEventListener('click', () => {
+    const row = $('skillsGitRow');
+    row.hidden = !row.hidden;
+    if (!row.hidden) $('settingsSkillsGitUrl').focus();
+});
+
+$('skillsSyncBtn')?.addEventListener('click', async () => {
+    const statusEl = $('skillsSyncStatus');
+    const gitUrl = $('settingsSkillsGitUrl').value.trim();
+    const btn = $('skillsSyncBtn');
+    btn.disabled = true;
+    setStatus(statusEl, 'Saving repo and syncing…');
+    const saved = await postJson('/api/settings', { skills: { git_url: gitUrl } });
+    const synced = saved.ok ? await postJson('/api/skills/refresh') : saved;
+    btn.disabled = false;
+    if (!synced.ok) {
+        setStatus(statusEl, `Sync failed: ${synced.data.error || 'server error'}`, false);
+        return;
+    }
+    setStatus(statusEl, `Synced — ${(synced.data.skills || []).length} skill(s) discovered.`, true);
+    await loadInstalledSkills();
+    await loadSkillsForNewBot();
+});
+
+/* ── MCP servers ─────────────────────────────────────────────────── */
+
+function installedMcpHtml(mcp) {
+    const enabled = mcp.enabled !== false;
+    const id = escapeHtml(mcp.id);
+    return `
+    <article class="market-item installed${enabled ? '' : ' is-disabled'}">
+        <div class="market-item-body">
+            <h4 class="market-item-title"><span class="status-dot ${enabled ? 'on' : 'off'}" aria-hidden="true"></span>${escapeHtml(mcp.name || mcp.id)}</h4>
+            <p class="market-item-desc">${escapeHtml(mcp.description || '')}</p>
+            <div class="market-item-meta">
+                ${mcp.endpoint ? `<span><i class="fa-solid fa-link" aria-hidden="true"></i> ${escapeHtml(mcp.endpoint)}</span>` : ''}
+                ${mcp.method ? `<span>${escapeHtml(mcp.method)}</span>` : ''}
+            </div>
+        </div>
+        <div class="item-actions">
+            <button type="button" class="switch${enabled ? ' on' : ''}" role="switch" aria-checked="${enabled}" data-mcp-action="${enabled ? 'disable' : 'enable'}" data-mcp-id="${id}" aria-label="${enabled ? 'Disable' : 'Enable'} ${escapeHtml(mcp.name || mcp.id)}" title="${enabled ? 'Disable' : 'Enable'}"></button>
+            <button type="button" class="icon-action danger" data-mcp-action="remove" data-mcp-id="${id}" title="Remove" aria-label="Remove ${escapeHtml(mcp.name || mcp.id)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+        </div>
+    </article>`;
+}
+
+function renderInstalledMcps() {
+    const list = $('mcpList');
+    if (!list) return;
+    const query = ($('mcpInstalledSearch')?.value || '').trim().toLowerCase();
+    const all = state.mcps.installed;
+    const shown = all.filter(m => !query || `${m.name} ${m.description || ''} ${m.endpoint || ''}`.toLowerCase().includes(query));
+    list.innerHTML = shown.length
+        ? shown.map(installedMcpHtml).join('')
+        : `<p class="list-empty">${all.length ? 'No matches.' : 'No MCP servers installed'}</p>`;
+}
+
+async function loadInstalledMcps() {
+    const { ok, data } = await fetchJson('/api/mcp/local');
+    if (!ok) {
+        $('mcpList').innerHTML = `<p class="list-empty">${escapeHtml(data.error || 'MCP service unreachable.')}</p>`;
+        return;
+    }
+    state.mcps.installed = data.mcps || [];
+    renderInstalledMcps();
+    if (state.mcps.marketLoaded) renderMarket('mcps');
+}
+
+async function loadMcpMarket() {
+    if (state.mcps.marketLoaded) return;
+    $('mcpMarketList').innerHTML = '<p class="list-empty"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading…</p>';
+    const { ok, data } = await fetchJson('/api/mcp/remote');
+    if (!ok) {
+        $('mcpMarketList').innerHTML = '<p class="list-empty">Could not load the marketplace.</p>';
+        return;
+    }
+    state.mcps.market = data.mcps || [];
+    state.mcps.marketLoaded = true;
+    renderMarket('mcps');
+}
+
+function setMcpAddOpen(open) {
+    const body = $('mcpAddBody');
+    if (!body) return;
+    body.hidden = !open;
+    $('mcpAddToggleBtn')?.setAttribute('aria-expanded', String(open));
+}
 
 function prefillMcpForm(entry) {
-    const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
-    set('mcpName', entry.name);
-    set('mcpDescription', entry.description);
-    set('mcpEndpoint', entry.endpoint);
-    set('mcpMethod', entry.method || 'GET');
-    const statusEl = document.getElementById('mcpAddStatus');
-    if (statusEl) statusEl.textContent = entry.endpoint
-        ? `'${entry.name}' ready — press Add MCP to register it.`
-        : `'${entry.name}' endpoint not found in catalogue — check the source repository or add manually.`;
-    setMcpAddCollapsed(false);
-    const endpointEl = document.getElementById('mcpEndpoint');
-    if (endpointEl) endpointEl.focus();
+    $('mcpName').value = entry.name || '';
+    $('mcpDescription').value = entry.description || '';
+    $('mcpEndpoint').value = entry.endpoint || '';
+    $('mcpMethod').value = entry.method || 'GET';
+    setStatus($('mcpAddStatus'), entry.endpoint
+        ? `'${entry.name}' ready — press Add Server to register it.`
+        : `'${entry.name}' has no endpoint in the catalogue — enter its URL to continue.`);
+    setMcpAddOpen(true);
+    $('mcpEndpoint').focus();
 }
 
-const mcpAddBtn = document.getElementById('mcpAddBtn');
-if (mcpAddBtn) mcpAddBtn.addEventListener('click', async () => {
-    const nameEl = document.getElementById('mcpName');
-    const descEl = document.getElementById('mcpDescription');
-    const endpointEl = document.getElementById('mcpEndpoint');
-    const methodEl = document.getElementById('mcpMethod');
-    const statusEl = document.getElementById('mcpAddStatus');
-    const name = nameEl ? nameEl.value.trim() : '';
-    const endpoint = endpointEl ? endpointEl.value.trim() : '';
-    if (!name || !endpoint) {
-        if (statusEl) statusEl.textContent = 'Name and endpoint URL are required.';
+async function installMarketMcp(item, btn) {
+    if (!item.endpoint) {
+        switchSubTab('tab-mcp', 'mcps-installed');
+        prefillMcpForm(item);
         return;
     }
-    try {
-        const response = await fetch(`${API_BASE}/api/mcps`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name,
-                description: descEl ? descEl.value.trim() : '',
-                endpoint,
-                method: methodEl ? methodEl.value : 'GET',
-            })
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Add failed');
-        if (statusEl) statusEl.textContent = `'${name}' added to Local MCPs.`;
-        if (nameEl) nameEl.value = '';
-        if (descEl) descEl.value = '';
-        if (endpointEl) endpointEl.value = '';
-        await loadMcps();
-        await loadMcpStatus();
-    } catch (e) {
-        if (statusEl) statusEl.textContent = `Add failed: ${e.message}`;
-    }
-});
-
-// Top Skills: the MCP Market skills leaderboard snapshot, shown
-// alongside local skills. Discovery only — entries carry no repo
-// Install a leaderboard skill locally (creates a local skill from the snapshot).
-
-
-async function renderLeaderboardSkills() {
-    const grid = document.getElementById('leaderboardSkillsGrid');
-    if (!grid) return;
-    try {
-        const response = await fetch(`${API_BASE}/api/skills/leaderboard`);
-        const data = await response.json();
-        const skills = data.skills || [];
-        if (!skills.length) {
-            grid.innerHTML = '<p style="color: var(--color-muted);">Leaderboard unavailable.</p>';
+    await withBusyButton(btn, async () => {
+        const { ok, data } = await postJson(`/api/mcp/import/${encodeURIComponent(item.id)}`);
+        if (!ok) {
+            toast(data.error || 'Import failed.', 'error');
             return;
         }
-        grid.innerHTML = skills.map(s => `
-            <div class="skill-card">
-                <div class="skill-header">
-                    <span class="skill-name">${escapeHtml(s.name)}</span>
-                    <span class="skill-badge skill-badge-leaderboard">#${s.rank}</span>
-                </div>
-                <div class="skill-description">${escapeHtml(s.description || '')}</div>
-                <div class="skill-meta">${escapeHtml(s.author || '')} · ${escapeHtml(s.category || '')} · ★ ${escapeHtml(s.stars || '')}</div>
-                <div class="skill-actions">
-                    <button class="btn-secondary small" data-skill-view="${escapeHtml(data.source_url || '')}">View</button>
-                    <button class="btn-save small" data-skill-install="${escapeHtml(s.name)}">Install</button>
-                </div>
-            </div>`).join('');
-        grid.querySelectorAll('[data-skill-install]').forEach(btn => btn.addEventListener('click', async (evt) => {
-            const name = evt.currentTarget.dataset.skillInstall;
-            const s = skills.find(x => x.name === name);
-            if (!s) return;
-            const confirmOk = confirm(`Install '${escapeHtml(s.name)}' as a local skill?`);
-            if (!confirmOk) return;
-            const statusEl = document.getElementById('skillsSyncStatus');
-            evt.currentTarget.disabled = true;
-            evt.currentTarget.textContent = 'Installing…';
-            try {
-                const response = await fetch(`${API_BASE}/api/skills`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: s.name,
-                        description: s.description || '',
-                        skills: [],
-                        abilities: [],
-                        system_prompt: '',
-                    }),
-                });
-                const result = await response.json();
-                if (response.ok) {
-                    setStatus(statusEl, `'${s.name}' installed as a local skill.`, true);
-                    await renderSkills();
-                    await renderLeaderboardSkills();
-                } else {
-                    setStatus(statusEl, `Install failed: ${result.error || response.status}`, false);
-                }
-            } catch (e) {
-                setStatus(statusEl, `Install failed: ${e.message}`, false);
-            } finally {
-                evt.currentTarget.disabled = false;
-                evt.currentTarget.textContent = 'Install';
-            }
-        }));
-
-    } catch (e) {
-        console.warn('Failed to load skills leaderboard', e);
-        grid.innerHTML = '<p style="color: var(--color-muted);">Leaderboard unavailable.</p>';
-    }
-}
-
-// ── Skills tab: cards, filter chips, search ─────────────────────────
-// Same card system as LLMs and MCPs: marketplace grid, filter chips,
-// search, enabled (tinted) / disabled states.
-let skillFilter = 'all'; // 'all' | 'active' | 'disabled'
-let skillSearch = '';
-
-function skillCardHtml(skill) {
-    const active = skill.active !== false;
-    const source = skill.source || 'local';
-    return `
-        <div class="skill-card ${active ? 'enabled' : 'disabled'}" data-skill-id="${escapeHtml(skill.id)}">
-            <div class="skill-header">
-                <span class="skill-name">${escapeHtml(skill.name)}</span>
-                <span class="skill-badge skill-badge-${source}">${escapeHtml(source)}</span>
-                <span class="skill-status ${active ? 'active' : 'disabled'}">${active ? 'Active' : 'Disabled'}</span>
-            </div>
-            <div class="skill-description">${escapeHtml(skill.description || '')}</div>
-            <div class="skill-controls">
-                <button type="button" class="btn-icon" data-skill-action="toggle" data-skill-id="${escapeHtml(skill.id)}" title="${active ? 'Disable' : 'Enable'}" aria-label="${active ? 'Disable skill' : 'Enable skill'}">${active ? '&#10006;' : '&#10003;'}</button>
-                <button type="button" class="btn-icon" data-skill-action="import-git" data-skill-id="${escapeHtml(skill.id)}" title="Import from Git" aria-label="Import skill from Git">&#8635;</button>
-            </div>
-        </div>`;
-}
-
-function renderSkillFilterChips(skills) {
-    const row = document.getElementById('skillFilterChips');
-    if (!row) return;
-    const activeCount = skills.filter(s => s.active).length;
-    const chips = [
-        { label: 'All', value: 'all' },
-        { label: `Active (${activeCount})`, value: 'active' },
-        { label: `Disabled (${skills.length - activeCount})`, value: 'disabled' },
-    ];
-    row.innerHTML = chips.map(c => `
-        <button type="button" class="chip ${skillFilter === c.value ? 'active' : ''}" data-skill-filter="${c.value}" aria-pressed="${skillFilter === c.value}">${escapeHtml(c.label)}</button>
-    `).join('');
-    row.querySelectorAll('[data-skill-filter]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            skillFilter = btn.dataset.skillFilter;
-            renderSkills();
-        });
+        toast(`'${item.name}' added to your MCP servers.`, 'success');
+        await loadInstalledMcps();
+        loadMcpStatus();
     });
 }
 
-async function renderSkills() {
-    const grid = document.getElementById('skillList');
-    const envGrid = document.getElementById('skillEnvList');
-    const note = document.getElementById('skillsGridNote');
-    if (!grid) return;
-    try {
-        const [agentsRes, envRes] = await Promise.all([
-            fetch(`${API_BASE}/api/skills/active`),
-            fetch(`${API_BASE}/api/env/vars?prefix=SKILL_`),
-        ]);
-        const skills = (await agentsRes.json()).skills || [];
-        const skillVars = ((await envRes.json()).vars) || {};
-        renderSkillFilterChips(skills);
+bindMarket('mcps', installMarketMcp, (item) => openExternal(item.source_url));
 
-        const query = skillSearch.trim().toLowerCase();
-        const filtered = skills.filter(s => {
-            if (skillFilter === 'active' && !s.active) return false;
-            if (skillFilter === 'disabled' && s.active) return false;
-            if (query) {
-                const haystack = `${s.name || ''} ${s.description || ''} ${s.source || ''}`.toLowerCase();
-                if (!haystack.includes(query)) return false;
-            }
-            return true;
-        });
+$('mcpInstalledSearch')?.addEventListener('input', debounce(renderInstalledMcps, 150));
 
-        grid.innerHTML = '';
-        if (!skills.length) {
-            grid.innerHTML = '<p class="skill-empty">No skills discovered. Sync a remote repo, or skills arrive from SKILL_* env vars.</p>';
-        } else if (!filtered.length) {
-            grid.innerHTML = '<p class="skill-empty">No skills match your filter.</p>';
-        } else {
-            grid.innerHTML = filtered.map(skillCardHtml).join('');
-            grid.querySelectorAll('[data-skill-action]').forEach(btn => btn.addEventListener('click', async () => {
-                const action = btn.dataset.skillAction;
-                const id = btn.dataset.skillId;
-                if (action === 'toggle') {
-                    await fetch(`${API_BASE}/api/skills/toggle/${encodeURIComponent(id)}`, { method: 'POST' });
-                    await renderSkills();
-                } else if (action === 'import-git') {
-                    if (!confirm('Import skill configuration from remote git source?')) return;
-                    const response = await fetch(`${API_BASE}/api/skills/import-git/${encodeURIComponent(id)}`, { method: 'POST' });
-                    const result = await response.json();
-                    const syncStatus = document.getElementById('skillsSyncStatus');
-                    if (result.success) {
-                        setStatus(syncStatus, 'Skill imported from Git.', true);
-                        await renderSkills();
-                    } else if (syncStatus) {
-                        setStatus(syncStatus, 'Failed to import from Git: ' + (result.error || ''), false);
-                    }
-                }
-            }));
-        }
-
-        renderEnvSkills(envGrid, skillVars);
-        if (note) {
-            const activeCount = skills.filter(s => s.active).length;
-            setStatus(note, `${skills.length} skill(s) discovered · ${activeCount} active`, true);
-        }
-    } catch (e) {
-        console.warn('Failed to load skills', e);
-        grid.innerHTML = '<p class="skill-empty">Failed to load skills.</p>';
+$('mcpList')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-mcp-action]');
+    if (!btn) return;
+    const id = btn.dataset.mcpId;
+    const action = btn.dataset.mcpAction;
+    let result;
+    if (action === 'remove') {
+        if (!confirm('Remove this MCP server?')) return;
+        result = await fetchJson(`/api/mcps/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    } else {
+        result = await postJson(`/api/mcp/${action}/${encodeURIComponent(id)}`);
     }
-}
-
-function renderEnvSkills(grid, skillVars) {
-    if (!grid) return;
-    const entries = Object.entries(skillVars);
-    if (!entries.length) {
-        grid.innerHTML = '<p class="skill-empty">No environment-configured skills.</p>';
-        return;
-    }
-    grid.innerHTML = entries.map(([key, value]) => {
-        const name = key.replace('SKILL_', '').replace(/_/g, ' ');
-        const short = value.length > 60 ? value.slice(0, 57) + '…' : value;
-        return `
-            <div class="skill-card" data-skill-key="${escapeHtml(key)}">
-                <div class="skill-header">
-                    <span class="skill-name">${escapeHtml(name)}</span>
-                    <span class="skill-badge skill-badge-env">Env</span>
-                </div>
-                <div class="skill-value" title="${escapeHtml(value)}">${escapeHtml(short)}</div>
-                <div class="skill-controls">
-                    <button type="button" class="btn-secondary small" data-env-action="disable" data-env-key="${escapeHtml(key)}">Disable</button>
-                </div>
-            </div>`;
-    }).join('');
-    grid.querySelectorAll('[data-env-action="disable"]').forEach(btn => btn.addEventListener('click', async () => {
-        if (!confirm('Disable this skill?')) return;
-        try {
-            const response = await fetch(`${API_BASE}/api/env/disable/${encodeURIComponent(btn.dataset.envKey)}`, { method: 'POST' });
-            const result = await response.json();
-            if (result.success) await renderSkills();
-        } catch (e) {
-            console.warn('Failed to disable skill', e);
-        }
-    }));
-}
-
-// Set a colored status message on an llm-status element.
-function setStatus(el, text, ok) {
-    if (!el) return;
-    el.textContent = text;
-    el.className = 'llm-status' + (ok === true ? ' status-ok' : ok === false ? ' status-bad' : '');
-}
-
-// Skills search: debounced, re-renders the grid on every change.
-const skillSearchInput = document.getElementById('skillSearch');
-if (skillSearchInput) {
-    let skillSearchTimer = null;
-    skillSearchInput.addEventListener('input', () => {
-        clearTimeout(skillSearchTimer);
-        skillSearchTimer = setTimeout(() => {
-            skillSearch = skillSearchInput.value;
-            renderSkills();
-        }, 250);
-    });
-}
-
-// Remote git repo for skills: save the URL, then re-discover (clone/pull).
-const skillsSyncBtn = document.getElementById('skillsSyncBtn');
-if (skillsSyncBtn) skillsSyncBtn.addEventListener('click', async () => {
-    const input = document.getElementById('settingsSkillsGitUrl');
-    const statusEl = document.getElementById('skillsSyncStatus');
-    const gitUrl = input ? input.value.trim() : '';
-    setStatus(statusEl, 'Saving repo and syncing…');
-    try {
-        await fetch(`${API_BASE}/api/settings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ skills: { git_url: gitUrl } })
-        });
-        const response = await fetch(`${API_BASE}/api/skills/refresh`, { method: 'POST' });
-        const data = await response.json();
-        setStatus(statusEl, `Synced — ${(data.skills || []).length} skill(s) discovered.`, true);
-        await renderSkills();
-    } catch (e) {
-        setStatus(statusEl, `Sync failed: ${e.message}`, false);
-    }
+    if (!result.ok) toast(result.data.error || 'MCP update failed.', 'error');
+    await loadInstalledMcps();
+    loadMcpStatus();
 });
 
-// Initialize MCP and Skills
-async function initMCPAndSkills() {
-    await loadMcps();
-    await renderSkills();
-    await renderLeaderboardSkills();
+$('mcpAddToggleBtn')?.addEventListener('click', () => {
+    const open = $('mcpAddBody').hidden;
+    setMcpAddOpen(open);
+    if (open) $('mcpName').focus();
+});
+
+$('mcpRefreshBtn')?.addEventListener('click', async () => {
+    await loadInstalledMcps();
+    await loadMcpStatus();
+});
+
+$('mcpAddBtn')?.addEventListener('click', async () => {
+    const statusEl = $('mcpAddStatus');
+    const name = $('mcpName').value.trim();
+    const endpoint = $('mcpEndpoint').value.trim();
+    if (!name || !endpoint) {
+        setStatus(statusEl, 'Name and endpoint URL are required.', false);
+        return;
+    }
+    if (!/^https?:\/\//i.test(endpoint)) {
+        setStatus(statusEl, 'Endpoint must start with http:// or https://', false);
+        return;
+    }
+    const { ok, data } = await postJson('/api/mcps', {
+        name,
+        description: $('mcpDescription').value.trim(),
+        endpoint,
+        method: $('mcpMethod').value,
+    });
+    if (!ok) {
+        setStatus(statusEl, `Add failed: ${data.error || 'server error'}`, false);
+        return;
+    }
+    ['mcpName', 'mcpDescription', 'mcpEndpoint'].forEach(id => { $(id).value = ''; });
+    setStatus(statusEl, '');
+    setMcpAddOpen(false);
+    toast(`'${name}' added to your MCP servers.`, 'success');
+    await loadInstalledMcps();
+    loadMcpStatus();
+});
+
+/* ── Global handlers ─────────────────────────────────────────────── */
+
+document.querySelectorAll('.close-modal').forEach(btn => {
+    btn.addEventListener('click', () => closeModal(btn.closest('.modal')));
+    makeKeyboardClickable(btn, () => closeModal(btn.closest('.modal')));
+});
+
+window.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) closeModal(e.target);
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const open = [...document.querySelectorAll('.modal.active')];
+    if (open.length) {
+        closeModal(open[open.length - 1]);
+        return;
+    }
+    toggleSidebar(false);
+});
+
+window.addEventListener('resize', debounce(() => {
+    if (!isMobile()) {
+        toggleSidebar(false);
+        restorePills();
+    }
+}, 150));
+
+/* ── Init ────────────────────────────────────────────────────────── */
+
+async function init() {
+    await Promise.all([loadBots(), loadSkillsForNewBot(), loadSettings()]);
+    renderModeSelector();
+    loadInstalledSkills();
+    loadInstalledMcps();
+    toggleSidebar(false);
 }
+
+init();
