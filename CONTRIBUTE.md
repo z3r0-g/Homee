@@ -94,8 +94,46 @@ To make your MCP server available in Homee:
 3. Servers without authentication install in **one click** with zero configuration required.
 
 ---
+## 4. Local Development Setup
 
-## 4. Testing Your Changes
+1. Clone the repository:
+
+```bash
+git clone https://github.com/yourusername/homee.git
+cd homee
+```
+
+2. Use devcontainer for automated setup or set up a Python virtual environment and install dependencies:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+3. Install Ollama:
+
+```bash
+brew install ollama
+```
+
+4. Start the MCP service:
+
+```bash
+python -m MCP.app
+```
+
+5. Start the UI service:
+
+```bash
+python -m UI.app
+```
+
+>Access the platform in your browser at `http://localhost:5001` (or at its local network IP from another device).
+
+---
+
+## 5. Testing Your Contributions
 
 Before submitting pull requests:
 ```bash
@@ -108,4 +146,5 @@ pytest test_homee_e2e.py
 # Run full test suite
 pytest
 ```
-Ensure all tests pass before submitting.
+
+>Ensure all tests pass before submitting.

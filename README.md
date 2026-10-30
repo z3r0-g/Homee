@@ -66,3 +66,12 @@ pytest
 # Run Playwright E2E browser tests
 pytest test_homee_e2e.py
 ```
+
+## Quick Start (Install Everything)
+The installer provides a one-click setup for Homee, including all dependencies and services.
+
+```bash
+bash install.sh
+```
+
+Access the platform in your browser at `http://localhost:5001`, or at its local network IP from another device.
