@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Homee AI Agent Platform</title>
-    <link rel="stylesheet" href="/static/app.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <link rel="stylesheet" href="/static/app.css?v={{ static_version }}">
 </head>
 <body>
 
@@ -12,41 +13,53 @@
         <div class="header-logo">
             Homee AI Agent Platform
         </div>
-        <div class="header-actions">
-            <span class="header-status" id="llmStatusPill">Checking LLM…</span>
+        <div class="header-actions" id="headerActions">
+            <span id="llmStatusPill" class="header-status warn" role="button" tabindex="0" aria-label="LLM status" data-icon="fa-microchip"><i class="fa-solid fa-microchip" aria-hidden="true"></i><span>LLM status</span></span>
+            <span id="mcpStatusPill" class="header-status warn" role="button" tabindex="0" aria-label="MCP status" data-icon="fa-plug"><i class="fa-solid fa-plug" aria-hidden="true"></i><span>MCP status</span></span>
+            <span id="skillsPill" class="header-status ok" role="button" tabindex="0" aria-label="Open Skills settings" data-icon="fa-wand-magic-sparkles"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i><span>Skills</span></span>
         </div>
     </div>
 
     <div class="app-container">
-        <aside class="sidebar">
+        <button type="button" class="sidebar-toggle" id="sidebarToggleBtn" aria-label="Toggle sidebar" aria-expanded="false" aria-controls="sidebar">
+            <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+        <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
+        <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h2>Bots</h2>
+                <button type="button" class="sidebar-close" id="sidebarCloseBtn" aria-label="Close sidebar">&#215;</button>
+            </div>
+            <div class="sidebar-search">
+                <div class="search-box"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="text" id="chatSearchInput" placeholder="Search chats…" aria-label="Search chats"></div>
+                <div id="chatSearchResults"></div>
             </div>
             <div class="sidebar-content" id="botList"></div>
             <div class="sidebar-footer">
-                <button class="btn-new-bot" id="newBotBtn">+ New Bot</button>
-                <button class="btn-secondary" id="settingsBtn">Settings</button>
+                <button class="btn-new-bot" id="newBotBtn" data-testid="new-bot-btn"><i class="fa-solid fa-plus" aria-hidden="true"></i> New Bot</button>
+                <button class="btn-secondary" id="settingsBtn" data-testid="settings-btn"><i class="fa-solid fa-gear" aria-hidden="true"></i> Settings</button>
             </div>
         </aside>
 
         <main class="chat-area">
             <div class="chat-header">
-                <div class="chat-title">Agent Console</div>
-                <div class="chat-status status-pill">Ready</div>
-            </div>
-            <div id="llmBanner" class="llm-banner" style="display:none;"></div>
+            <div class="chat-title">Agent Console</div>
+        </div>
+            <div id="llmBanner" class="llm-banner" style="display:none;" aria-live="polite"></div>
             <div id="chatArea" class="chat-host">
                 <div class="empty">Select a bot to begin</div>
             </div>
         </main>
     </div>
 
+    <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,image/*,.png,.jpg,.jpeg,.gif,.webp" style="display:none">
+
     <!-- CREATE BOT MODAL -->
-    <div id="newBotModal" class="modal">
+    <div id="newBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Create new bot">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Create New Bot</h3>
-                <span class="close-modal">&times;</span>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </div>
             <form id="newBotForm">
                 <div class="form-group">
@@ -54,8 +67,8 @@
                     <input type="text" id="newBotName" placeholder="Research Bot" required>
                 </div>
                 <div class="form-group">
-                    <label>Agent Personality</label>
-                    <select id="newBotPersonality">
+                    <label>Skill</label>
+                    <select id="newBotSkill">
                         <option value="">(none)</option>
                     </select>
                 </div>
@@ -80,127 +93,334 @@
                         Enabled
                     </label>
                 </div>
-                <button type="submit" class="btn-save">Create Bot</button>
+                <button type="submit" class="btn-save"><i class="fa-solid fa-plus" aria-hidden="true"></i> Create Bot</button>
             </form>
         </div>
     </div>
 
-    <!-- PERSONALITY MODAL -->
-    <div id="personalityModal" class="modal">
+    <!-- EDIT BOT MODAL -->
+    <div id="editBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Edit bot">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Personality</h3>
-                <span class="close-modal">&times;</span>
+                <h3>Edit Bot</h3>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </div>
-            <form id="personalityForm">
+            <form id="editBotForm">
+                <input type="hidden" id="editBotId">
+                <div class="form-group">
+                    <label>Bot Name</label>
+                    <input type="text" id="editBotName" required>
+                </div>
+                <div class="form-group">
+                    <label>Skill</label>
+                    <select id="editBotSkill">
+                        <option value="">(none)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Task Prompt</label>
+                    <textarea id="editBotTaskPrompt" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Schedule</label>
+                    <select id="editBotSchedule">
+                        <option value="none">None</option>
+                        <option value="interval">Every N Seconds</option>
+                        <option value="cron">Cron Expression</option>
+                    </select>
+                </div>
+                <div class="form-group" id="editScheduleOptions" style="display:none;">
+                    <label>Interval</label>
+                    <input type="number" id="editBotInterval" value="3600" min="60">
+                </div>
+                <div class="form-group" id="editCronOptions" style="display:none;">
+                    <label>Cron Expression</label>
+                    <input type="text" id="editBotCron" placeholder="0 * * * *">
+                </div>
+                <p id="editBotStatus" class="llm-status" role="status"></p>
+                <button type="submit" class="btn-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save Changes</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SKILL MODAL -->
+    <div id="skillModal" class="modal" role="dialog" aria-modal="true" aria-label="Create or edit skill">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Skill</h3>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <form id="skillForm">
                 <div class="form-group">
                     <label>Name</label>
-                    <input type="text" id="personalityName" required>
+                    <input type="text" id="skillName" required>
                 </div>
                 <div class="form-group">
                     <label>Description</label>
-                    <textarea id="personalityDescription"></textarea>
+                    <textarea id="skillDescription"></textarea>
                 </div>
                 <div class="form-group">
                     <label>Skills</label>
-                    <input type="text" id="personalitySkills">
+                    <input type="text" id="skillSkills">
                 </div>
                 <div class="form-group">
                     <label>Abilities</label>
-                    <input type="text" id="personalityAbilities">
+                    <input type="text" id="skillAbilities">
                 </div>
                 <div class="form-group">
                     <label>System Prompt</label>
-                    <textarea id="personalitySystemPrompt"></textarea>
+                    <textarea id="skillSystemPrompt"></textarea>
                 </div>
-                <button type="submit" class="btn-save">Save Personality</button>
+                <button type="submit" class="btn-save"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save Skill</button>
             </form>
         </div>
     </div>
 
     <!-- SETTINGS MODAL -->
-    <div id="settingsModal" class="modal">
+    <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Settings</h3>
-                <span class="close-modal">&times;</span>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </div>
 
-            <!-- Tab Navigation -->
-            <div class="tab-nav">
-                <button class="tab-btn active" data-tab="llm">LLM Provider</button>
-                <button class="tab-btn" data-tab="mcp">MCP Marketplace</button>
-                <button class="tab-btn" data-tab="personalities">Agent Personalities</button>
+            <div class="settings-general">
+                <label class="check-label" for="settingsSchedulerEnabled">
+                    <input type="checkbox" id="settingsSchedulerEnabled" checked>
+                    Task scheduler enabled
+                </label>
+                <div class="inline-field">
+                    <label for="settingsSchedulerTick">Tick (seconds)</label>
+                    <input type="number" id="settingsSchedulerTick" value="30" min="5">
+                </div>
+                <div class="settings-save">
+                    <button type="submit" form="settingsForm" class="btn-save" id="settingsSaveBtn"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i> Save Settings</button>
+                    <div id="settingsSaveStatus" class="llm-status" aria-live="polite"></div>
+                </div>
             </div>
 
-            <!-- Tab Contents -->
+            <div class="tab-nav" role="tablist">
+                <button type="button" role="tab" aria-selected="true" class="tab-btn active" data-tab="llm"><i class="fa-solid fa-microchip" aria-hidden="true"></i> LLMs</button>
+                <button type="button" role="tab" aria-selected="false" class="tab-btn" data-tab="mcp"><i class="fa-solid fa-plug" aria-hidden="true"></i> MCPs</button>
+                <button type="button" role="tab" aria-selected="false" class="tab-btn" data-tab="skills"><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Skills</button>
+            </div>
+
             <div class="tab-content active" id="tab-llm">
                 <form id="settingsForm">
-                    <!-- LLM Mode Selector -->
                     <div class="form-group">
                         <label>LLM Mode</label>
                         <div id="modeOptions" class="mode-switches">
-                            <!-- Populated by JavaScript -->
                         </div>
                     </div>
 
                     <hr style="margin: 16px 0; border-color: var(--color-border);">
 
-                    <div class="form-group">
-                        <label>Local Model</label>
-                        <input type="text" id="settingsLocalModel" value="qwen2.5:7b">
-                    </div>
-                    <div class="form-group">
-                        <label>Installed Ollama Models</label>
-                        <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
-                        <select id="settingsInstalledModels">
-                            <option value="">(no models detected)</option>
-                        </select>
-                        <div class="form-row">
-                            <input type="text" id="pullModelName" placeholder="e.g. qwen2.5:7b">
-                            <button type="button" class="btn-secondary" id="pullModelBtn">Pull Model</button>
+                    <div class="form-group llms-section">
+                        <div class="llms-header">
+                            <label style="margin: 0;">Local Models</label>
+                            <button type="button" class="btn-icon" id="llmsCollapseBtn"
+                                    aria-expanded="true" aria-controls="llmsBody"
+                                    title="Collapse local models"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
                         </div>
-                        <div id="pullStatus" class="llm-status"></div>
+                        <div id="llmsBody">
+                            <div id="llmStatusLine" class="llm-status">Checking Ollama…</div>
+                            <div id="modelFilterChips" class="chip-row"></div>
+                            <h5>Loaded on this host</h5>
+                            <div id="loadedModelsGrid" class="model-grid"></div>
+                            <h5>Available models</h5>
+                            <div id="modelCatalogGrid" class="model-grid"></div>
+                            <div id="catalogNote" class="llm-status"></div>
+                            <div id="ollamaSearchLink"></div>
+                            <div class="form-group" id="group-local-model">
+                                <label>Primary Model</label>
+                                <input type="text" id="settingsLocalModel" value="llama3.2:3b">
+                            </div>
+                            <div class="form-group" id="group-secondary-model">
+                                <label>Secondary Model</label>
+                                <input type="text" id="settingsSecondaryModel" placeholder="e.g. llama3.2:3b">
+                                <small id="secondaryModelHint" class="llm-status"></small>
+                            </div>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Remote Base URL</label>
-                        <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+
+                    <hr id="modeSectionDivider" style="margin: 16px 0; border-color: var(--color-border);">
+                    <div id="modeSection">
+                        <h4 id="modeSectionTitle">Cloud</h4>
+                        <p id="modeSectionHint" class="llm-status"></p>
+                        <h5 id="modeSubCloud">Cloud endpoint</h5>
+                        <div class="form-group" id="group-secondary-base-url">
+                            <label>Secondary Base URL</label>
+                            <input type="text" id="settingsSecondaryBaseUrl" placeholder="http://localhost:11434">
+                        </div>
+                        <div class="form-group" id="group-secondary-api-key">
+                            <label>Secondary API Key</label>
+                            <input type="password" id="settingsSecondaryApiKey" autocomplete="current-password">
+                        </div>
+                        <h5 id="modeSubRemote">Remote fallback</h5>
+                        <div class="form-group" id="group-remote-base-url">
+                            <label>Remote Base URL</label>
+                            <input type="text" id="settingsRemoteBaseUrl" placeholder="https://openrouter.ai/api/v1">
+                        </div>
+                        <div class="form-group" id="group-remote-api-key">
+                            <label>Remote API Key</label>
+                            <input type="password" id="settingsRemoteApiKey" autocomplete="current-password">
+                        </div>
+                        <div class="form-group" id="group-remote-model">
+                            <label>Remote Model</label>
+                            <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Remote API Key</label>
-                        <input type="password" id="settingsRemoteApiKey" autocomplete="current-password">
-                    </div>
-                    <div class="form-group">
-                        <label>Remote Model</label>
-                        <input type="text" id="settingsRemoteModel" value="gpt-4o-mini">
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="settingsSchedulerEnabled" checked>
-                            Scheduler Enabled
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label>Scheduler Tick (seconds)</label>
-                        <input type="number" id="settingsSchedulerTick" value="30" min="5">
-                    </div>
-                    <button type="submit" class="btn-save">Save Settings</button>
                 </form>
             </div>
 
             <div class="tab-content" id="tab-mcp">
-                <div class="form-group">
-                    <label>MCP Marketplace</label>
-                    <div id="marketplaceGrid" class="marketplace-grid"></div>
+                <div class="sub-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected="true" class="sub-tab active" data-subtab="mcps-installed">Installed</button>
+                    <button type="button" role="tab" aria-selected="false" class="sub-tab" data-subtab="mcps-marketplace">Marketplace</button>
+                </div>
+
+                <div class="sub-panel active" id="mcps-installed">
+                    <p class="panel-intro">Connect your bots to external APIs, local tools, and hosted services through MCP servers.</p>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="text" id="mcpInstalledSearch" placeholder="Search installed servers…" aria-label="Search installed MCP servers">
+                    </div>
+                    <div id="mcpList" class="item-list"></div>
+
+                    <div class="action-stack">
+                        <button type="button" class="btn-wide btn-wide-primary" id="mcpAddToggleBtn" aria-expanded="false" aria-controls="mcpAddBody">
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i> Add Remote Server
+                        </button>
+                        <div id="mcpAddBody" class="inline-form" hidden>
+                            <div class="form-group">
+                                <label for="mcpName">Name</label>
+                                <input type="text" id="mcpName" placeholder="My API">
+                            </div>
+                            <div class="form-group">
+                                <label for="mcpDescription">Description</label>
+                                <input type="text" id="mcpDescription" placeholder="What this server does">
+                            </div>
+                            <div class="form-group">
+                                <label for="mcpEndpoint">Endpoint URL</label>
+                                <input type="text" id="mcpEndpoint" placeholder="https://api.example.com" inputmode="url">
+                            </div>
+                            <div class="form-group">
+                                <label for="mcpMethod">Method</label>
+                                <select id="mcpMethod">
+                                    <option value="GET">GET</option>
+                                    <option value="POST">POST</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn-save" id="mcpAddBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Server</button>
+                            <div id="mcpAddStatus" class="llm-status" aria-live="polite"></div>
+                        </div>
+                        <button type="button" class="btn-wide" data-goto-subtab="mcps-marketplace">
+                            <i class="fa-solid fa-store" aria-hidden="true"></i> Browse Marketplace
+                        </button>
+                        <button type="button" class="link-button" id="mcpRefreshBtn">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sub-panel" id="mcps-marketplace">
+                    <p class="panel-intro">Servers from the Official MCP Registry and Smithery. One-click install with automatic endpoint resolution; only asks for credentials when needed.</p>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="text" id="mcpMarketSearch" placeholder="Search MCP servers…" aria-label="Search MCP marketplace">
+                        <button type="button" class="btn-secondary small" id="mcpSyncBtn" title="Sync with Official Registry & Smithery"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Sync</button>
+                    </div>
+                    <div id="mcpMarketChips" class="chip-row"></div>
+                    <div id="mcpMarketList" class="item-list"></div>
+                    <div id="mcpGrid" class="mcp-grid" hidden></div>
+                    <div id="mcpMarketNote" class="llm-status"></div>
                 </div>
             </div>
 
-            <div class="tab-content" id="tab-personalities">
-                <div class="form-group">
-                    <label>Agent Personalities</label>
-                    <div id="personalityList" class="personality-list"></div>
+            <div class="tab-content" id="tab-skills">
+                <div class="sub-tabs" role="tablist">
+                    <button type="button" role="tab" aria-selected="true" class="sub-tab active" data-subtab="skills-installed">Installed</button>
+                    <button type="button" role="tab" aria-selected="false" class="sub-tab" data-subtab="skills-marketplace">Marketplace</button>
+                </div>
+
+                <div class="sub-panel active" id="skills-installed">
+                    <p class="panel-intro">Reusable instruction sets your bots load on demand for specific tasks, without staying in context for unrelated work.</p>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="text" id="skillInstalledSearch" placeholder="Search installed skills…" aria-label="Search installed skills">
+                    </div>
+                    <div id="skillList" class="item-list"></div>
+                    <div id="skillsGridNote" class="llm-status"></div>
+
+                    <div class="action-stack">
+                        <button type="button" class="btn-wide btn-wide-primary" id="skillCreateBtn">
+                            <i class="fa-solid fa-plus" aria-hidden="true"></i> Create Skill
+                        </button>
+                        <button type="button" class="btn-wide" id="skillsSyncToggleBtn">
+                            <i class="fa-brands fa-git-alt" aria-hidden="true"></i> Sync from Git Repository
+                        </button>
+                        <div id="skillsGitRow" class="inline-form" hidden>
+                            <label for="settingsSkillsGitUrl">Remote skills repo (git URL)</label>
+                            <div class="form-row">
+                                <input type="text" id="settingsSkillsGitUrl" placeholder="https://github.com/you/my-skills.git" inputmode="url">
+                                <button type="button" class="btn-secondary" id="skillsSyncBtn"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Sync</button>
+                            </div>
+                            <div id="skillsSyncStatus" class="llm-status" aria-live="polite"></div>
+                        </div>
+                        <button type="button" class="link-button" data-goto-subtab="skills-marketplace">
+                            <i class="fa-solid fa-store" aria-hidden="true"></i> Browse Marketplace
+                        </button>
+                    </div>
+                </div>
+
+                <div class="sub-panel" id="skills-marketplace">
+                    <p class="panel-intro">Reusable instruction sets synced from Smithery and public registry. <a id="skillMarketLink" href="#" target="_blank" rel="noopener" hidden>Browse more online <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></p>
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="text" id="skillMarketSearch" placeholder="Search skills…" aria-label="Search skills marketplace">
+                        <button type="button" class="btn-secondary small" id="skillSyncBtn" title="Sync with Smithery"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Sync</button>
+                    </div>
+                    <div id="skillMarketChips" class="chip-row"></div>
+                    <div id="skillMarketList" class="item-list"></div>
+                    <div id="leaderboardSkillsGrid" class="skills-grid" hidden></div>
+                    <div id="skillMarketNote" class="llm-status"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- MCP AUTH CREDENTIAL MODAL -->
+    <div id="mcpAuthModal" class="modal" role="dialog" aria-modal="true" aria-label="Enter MCP Credentials">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="mcpAuthModalTitle">Authentication Required</h3>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <p id="mcpAuthModalDesc" class="panel-intro">This MCP server requires credentials.</p>
+            <form id="mcpAuthForm">
+                <input type="hidden" id="mcpAuthServerId">
+                <div class="form-group">
+                    <label for="mcpAuthKey" id="mcpAuthKeyLabel">API Key or Token</label>
+                    <input type="password" id="mcpAuthKey" placeholder="Enter API key or token" autocomplete="off" required>
+                </div>
+                <div class="form-actions" style="display:flex;gap:10px;margin-top:16px;">
+                    <button type="submit" class="btn-save" id="mcpAuthSubmitBtn"><i class="fa-solid fa-download" aria-hidden="true"></i> Install Server</button>
+                    <button type="button" class="btn-secondary" id="mcpAuthCancelBtn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODEL PULL MODAL -->
+    <div id="pullModal" class="modal" role="dialog" aria-modal="true" aria-label="Model pull progress">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Pulling model</h3>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <p id="pullModalModel" class="llm-status"></p>
+            <div id="pullModalStatus" class="llm-status" aria-live="polite"></div>
+            <button type="button" class="btn-secondary" id="pullModalClose">Close</button>
         </div>
     </div>
 

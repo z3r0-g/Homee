@@ -13,11 +13,14 @@ from .config import (
     BOTS_DIR,
     KNOWLEDGE_DIR,
     MCPS_DIR,
-    PERSONALITIES_DIR,
+    INSTANCES_DIR,
+    SKILLS_DIR,
     SETTINGS_FILE,
     load_settings,
     save_settings,
 )
+
+from .skill_md import parse_skill_md, render_skill_md
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -50,8 +53,8 @@ def _save_json(path: Path, data: Any) -> None:
 # ══════════════════════════════════════════════════════════════════
 
 @dataclass
-class Personality:
-    """Agent personality with specialized skills and abilities."""
+class Skill:
+    """specialized skills and abilities."""
 
     id: str
     name: str
@@ -65,7 +68,7 @@ class Personality:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Personality":
+    def from_dict(cls, d: Dict[str, Any]) -> "Skill":
         return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
 
 
@@ -92,11 +95,11 @@ class BotConfig:
 
 @dataclass
 class Bot:
-    """Agent bot instance — embodies a Personality to accomplish tasks."""
+    """Skill bot instance — embodies a Skill to accomplish tasks."""
 
     id: str
     name: str
-    personality_id: str = ""
+    skill_id: str = ""
     status: str = "idle"
     created_at: str = field(default_factory=_iso)
     updated_at: str = field(default_factory=_iso)
@@ -194,31 +197,85 @@ class BotRepository:
         return list(self._bots.values())
 
 
-class PersonalityRepository:
-    def __init__(self) -> None:
-        self._personalities: List[Personality] = []
-        self._path = PERSONALITIES_DIR / "personalities.json"
+class SkillRepository:
+    """Skills stored as one Markdown file per skill in SKILLS_DIR."""
 
-    def load(self) -> List[Personality]:
-        data = _load_json(self._path, []) or []
-        self._personalities = [Personality.from_dict(p) for p in data]
-        return self._personalities
+    def __init__(self) -> None:
+        self._skills: List[Skill] = []
+        self._dir = SKILLS_DIR
+
+    def load(self) -> List[Skill]:
+        self._migrate_legacy()
+        skills: List[Skill] = []
+        if self._dir.exists():
+            for path in sorted(self._dir.glob("*.md")):
+                try:
+                    data = parse_skill_md(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if not data.get("name"):
+                    continue
+                skills.append(Skill(
+                    id=path.stem,
+                    name=data.get("name", ""),
+                    description=data.get("description", ""),
+                    skills=data.get("skills", []),
+                    abilities=data.get("abilities", []),
+                    system_prompt=data.get("system_prompt", ""),
+                ))
+        self._skills = skills
+        return self._skills
 
     def save(self) -> None:
-        _save_json(self._path, [p.to_dict() for p in self._personalities])
+        self._dir.mkdir(parents=True, exist_ok=True)
+        for skill in self._skills:
+            (self._dir / f"{skill.id}.md").write_text(
+                render_skill_md(skill), encoding="utf-8")
 
-    def add(self, personality: Personality) -> None:
-        self._personalities.append(personality)
+    def add(self, skill: Skill) -> None:
+        self._skills.append(skill)
         self.save()
 
-    def get(self, personality_id: str) -> Optional[Personality]:
-        for p in self._personalities:
-            if p.id == personality_id:
-                return p
+    def get(self, skill_id: str) -> Optional[Skill]:
+        for s in self._skills:
+            if s.id == skill_id:
+                return s
         return None
 
-    def all(self) -> List[Personality]:
-        return list(self._personalities)
+    def all(self) -> List[Skill]:
+        return list(self._skills)
+
+    def delete(self, skill_id: str) -> bool:
+        remaining = [s for s in self._skills if s.id != skill_id]
+        if len(remaining) == len(self._skills):
+            return False
+        self._skills = remaining
+        (self._dir / f"{skill_id}.md").unlink(missing_ok=True)
+        return True
+
+    def _migrate_legacy(self) -> None:
+        """One-time: legacy single-file personalities.json -> .md files."""
+        legacy = INSTANCES_DIR / "personalities" / "personalities.json"
+        if not legacy.exists():
+            return
+        if self._dir.exists() and any(self._dir.glob("*.md")):
+            return
+        try:
+            data = json.loads(legacy.read_text(encoding="utf-8"))
+            items = data if isinstance(data, list) else []
+            self._dir.mkdir(parents=True, exist_ok=True)
+            for item in items:
+                if not isinstance(item, dict) or not item.get("id"):
+                    continue
+                try:
+                    skill = Skill.from_dict(item)
+                    (self._dir / f"{skill.id}.md").write_text(
+                        render_skill_md(skill), encoding="utf-8")
+                except (KeyError, TypeError, ValueError):
+                    continue
+            legacy.rename(legacy.with_suffix(".json.bak"))
+        except (OSError, ValueError):
+            return
 
 
 class MCPRepository:
@@ -269,5 +326,5 @@ class MCPRepository:
 # ══════════════════════════════════════════════════════════════════
 
 bots_repo = BotRepository()
-personalities_repo = PersonalityRepository()
+skills_repo = SkillRepository()
 mcps_repo = MCPRepository()

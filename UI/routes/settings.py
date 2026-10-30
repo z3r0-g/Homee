@@ -19,7 +19,7 @@ MODE_CONFIGS = {
     },
     "local_cloud": {
         "name": "Local + Cloud",
-        "description": "Local Ollama model plus cloud LLM. Requires 2 OpenAPI-compatible cloud API keys validated auth/live. Local model can balance credit use between both.",
+        "description": "Local Ollama model plus a cloud LLM. The cloud fallback uses the secondary endpoint when set, otherwise the remote settings below.",
         "fields": ["local_model", "secondary_base_url", "secondary_api_key", "secondary_model"],
         "requires_auth": True,
     },
@@ -43,8 +43,10 @@ def get_settings():
 @settings_bp.route("/api/settings", methods=["POST"])
 def save_settings_endpoint():
     data = request.get_json(silent=True) or {}
-    # Merge with defaults to keep structure intact
-    merged = dict(DEFAULT_SETTINGS)
+    # Merge over CURRENT settings (not defaults): merging over defaults
+    # reset every field the form does not send (mode, skills.git_url, ...)
+    # on every save. load_settings() already deep-merges over defaults.
+    merged = load_settings()
     def _deep_merge(base, override):
         for k, v in override.items():
             if k in base and isinstance(base[k], dict) and isinstance(v, dict):
@@ -119,7 +121,7 @@ def env_vars():
     settings = load_settings()
     prefix = request.args.get("prefix", "")
 
-    # Check for AGENT_ env vars in the settings or environment
+    # Check for SKILL_ env vars in the settings or environment
     vars_dict = settings.get("env_vars", {}) if isinstance(settings.get("env_vars"), dict) else {}
 
     if prefix:
@@ -128,6 +130,47 @@ def env_vars():
         filtered = vars_dict
 
     return jsonify({"vars": filtered})
+
+
+@settings_bp.route("/api/llm/status", methods=["GET"])
+def llm_status():
+    """Ollama reachability + installed models + configured-model readiness."""
+    return jsonify(llm_router.ollama_status())
+
+
+@settings_bp.route("/api/llm/pull", methods=["POST"])
+def llm_pull():
+    """Start a background pull of a model. 202 + job, or 409 if busy."""
+    data = request.get_json(silent=True) or {}
+    current = llm_router.pull_job()
+    if current["state"] == "running":
+        return jsonify({"error": "A model pull is already running.",
+                        "job": current}), 409
+    model = (data.get("model") or "").strip() \
+        or load_settings()["llm"]["local_model"]
+    return jsonify({"job": llm_router.start_pull(model)}), 202
+
+
+@settings_bp.route("/api/llm/pull", methods=["GET"])
+def llm_pull_status():
+    """Current model-pull job state (idle/running/done/error)."""
+    return jsonify({"job": llm_router.pull_job()})
+
+
+@settings_bp.route("/api/llm/catalog", methods=["GET"])
+def llm_catalog():
+    """Curated model browser: entries sized to this host's available RAM."""
+    from ..model_catalog import catalog
+    return jsonify(catalog())
+
+
+@settings_bp.route("/api/llm/models/<path:model>", methods=["DELETE"])
+def llm_delete_model(model):
+    """Unload (delete) a locally installed model."""
+    result = llm_router.delete_model(model)
+    if result.get("success"):
+        return jsonify(result)
+    return jsonify({"error": result.get("error", "Delete failed")}), 502
 
 
 @settings_bp.route("/api/settings/modes", methods=["GET"])
@@ -144,6 +187,8 @@ def set_mode():
     """Set the active LLM mode."""
     data = request.get_json(silent=True) or {}
     mode = data.get("mode", "local_local")
+    if mode not in MODE_CONFIGS:
+        return jsonify({"error": f"Unknown mode: {mode}"}), 400
     settings = load_settings()
     settings["llm"]["mode"] = mode
     # Validate mode-specific requirements

@@ -1,0 +1,5 @@
+{
+  "local_dir": "Skills/local",
+  "git_repos": [],
+  "notes": "Add git repo URLs here to load remote skills. Each repo is cloned into Skills/remote/<name>/ and its .py modules are scanned for SkillBase subclasses."
+}

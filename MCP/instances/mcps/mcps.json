@@ -1,12 +1,1 @@
-[
-  {
-    "id": "1792958804380",
-    "name": "Test",
-    "description": "",
-    "endpoint": "",
-    "method": "GET",
-    "auth_type": "none",
-    "headers": {},
-    "created_at": 1792958804.3809707
-  }
-]
+[]

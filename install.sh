@@ -54,7 +54,18 @@ APP_ROOT="$(pwd)"
 UI_PORT=5001
 MCP_PORT=5002
 
-MODEL_NAME="${MODEL_NAME:-qwen2.5:7b}"
+# Default model, RAM-aware (same rule as UI/model_catalog.py): llama3.2:3b
+# is the default for all hosts — at ~2 GB it fits even a minimal 8 GB host
+# and runs fastest on the CPU-only hardware Homee targets.
+# An explicitly exported MODEL_NAME always wins.
+if [ -z "${MODEL_NAME:-}" ]; then
+    TOTAL_GB=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}')
+    if [ -n "$TOTAL_GB" ] && [ "$TOTAL_GB" -lt 12 ]; then
+        MODEL_NAME="llama3.2:3b"
+    else
+        MODEL_NAME="llama3.2:3b"
+    fi
+fi
 
 MIN_RAM_MB=8192
 RECOMMENDED_RAM_MB=16384
@@ -124,10 +135,9 @@ echo -e "${NC}"
 # ROOT CHECK
 #########################################
 
-if [[ $EUID -ne 0 ]]; then
-    error "Run as root:"
-    echo
-    echo "sudo ./install.sh"
+# Check if root is required (opt-in via REQUIRE_ROOT=1)
+if [[ "${REQUIRE_ROOT:-0}" == "1" ]] && [[ $EUID -ne 0 ]]; then
+    error "This operation requires root. Run with: sudo ./install.sh"
     exit 1
 fi
 
@@ -137,12 +147,13 @@ fi
 
 info "Checking operating system..."
 
-if ! grep -qi ubuntu /etc/os-release; then
-   error "Ubuntu required"
+# Support both Ubuntu and Debian-based distributions (e.g., Debian Trixie in devcontainers)
+if ! grep -qiE "^(ID|NAME)=.*(ubuntu|debian)" /etc/os-release; then
+   error "Ubuntu/Debian required"
    exit 1
 fi
 
-success "Ubuntu detected"
+success "Ubuntu/Debian detected"
 progress
 
 ################################---------
@@ -214,7 +225,8 @@ apt install -y \
     curl \
     git \
     jq \
-    net-tools
+    net-tools \
+    zstd
 
 ################################---------
 # PYTHON VERSION
@@ -241,11 +253,12 @@ progress
 #########################################
 
 if ! command -v ollama >/dev/null 2>&1; then
-    error "Ollama not installed"
-    echo
-    echo "Install:"
-    echo "curl -fsSL https://ollama.com/install.sh | sh"
-    exit 1
+    info "Ollama not found — installing automatically..."
+    curl -fsSL https://ollama.com/install.sh | sh || {
+        error "Ollama installation failed"
+        exit 1
+    }
+    success "Ollama installed"
 fi
 
 success "Ollama installed"
@@ -255,14 +268,31 @@ progress
 # OLLAMA SERVICE
 #########################################
 
-if ! systemctl is-active ollama >/dev/null 2>&1; then
-    warn "Starting Ollama..."
-    systemctl enable ollama
-    systemctl restart ollama
-    sleep 10
-fi
+if ! curl -fs http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    warn "Ollama API not responding — starting it..."
+    # Stop any existing ollama processes first
+    pkill -f "ollama serve" 2>/dev/null || true
+    sleep 2
 
-success "Ollama service running"
+    # Start ollama server in background
+    nohup ollama serve >/tmp/ollama-serve.log 2>&1 &
+
+    # Wait up to 30 seconds for the API to respond
+    for i in $(seq 1 30); do
+        if curl -fs http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            success "Ollama API is responding"
+            break
+        fi
+        sleep 1
+    done
+
+    if ! curl -fs http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+        error "Ollama failed to start. Check: tail /tmp/ollama-serve.log"
+        exit 1
+    fi
+else
+    success "Ollama service already running"
+fi
 progress
 
 ################################---------
@@ -367,7 +397,7 @@ progress
 # FIREWALL
 #########################################
 
-if command -v ufw >/dev/null 2>&1; then
+if command -v ufw >/dev/null 2>&1 && [[ $EUID -eq 0 ]]; then
     ufw allow ${UI_PORT}/tcp || true
     ufw allow ${MCP_PORT}/tcp || true
     success "Firewall configured"
@@ -448,21 +478,29 @@ success "Systemd services generated"
 progress
 
 ################################---------
-# ENABLE
+# SYSTEMD SERVICE MANAGEMENT
 #########################################
 
-systemctl daemon-reload
+# Only manage services via systemd if it is actually available
+if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
+    info "Managing services via systemd..."
+    systemctl daemon-reload
 
-systemctl enable homee-mcp
-systemctl enable homee-ui
+    systemctl enable homee-mcp
+    systemctl enable homee-ui
 
-systemctl restart homee-mcp
-progress
+    systemctl restart homee-mcp
+    progress
 
-sleep 5
+    sleep 5
 
-systemctl restart homee-ui
-progress
+    systemctl restart homee-ui
+    progress
+else
+    warn "systemd not detected — skipping service start."
+    warn "Systemd unit files created at /etc/systemd/system/homee-*.service"
+    warn "Use 'sudo systemctl enable --now homee-ui homee-mcp' when systemd is available."
+fi
 
 ################################---------
 # HEALTH CHECKS

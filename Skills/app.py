@@ -1,10 +1,11 @@
-"""Agent base class — every Agent personality subclasses this."""
+"""Skill base class — every skill subclasses this."""
 
 from __future__ import annotations
 
 import importlib
 import inspect
 import json
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -13,13 +14,17 @@ from typing import Any, Callable, Dict, List, Optional
 
 import ollama
 
-__all__ = ["AgentBase", "AgentResult"]
+__all__ = ["SkillBase", "SkillResult"]
 
-AGENT_MODEL = "qwen2.5"
+# NOTE on tags: in Ollama, a bare "llama3.2" resolves to the :latest tag,
+# which is NOT satisfied by an installed "llama3.2:3b" — always use a full
+# tag. OLLAMA_MODEL wins when set (same convention as the UI service),
+# so a host with a different tag installed (e.g. llama3.2:3b) just sets it.
+SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 
 @dataclass
-class AgentResult:
-    """Result of an Agent execution turn."""
+class SkillResult:
+    """Result of an Skill execution turn."""
 
     content: str
     tool_calls: List[Dict[str, Any]] = field(default_factory=list)
@@ -27,11 +32,11 @@ class AgentResult:
     error: Optional[str] = None
 
 
-class AgentBase:
+class SkillBase:
     name: str = "Generic Homee"
-    description: str = "A generic AI agent."
+    description: str = "A generic AI skill."
     system_prompt: str = "You are a helpful assistant."
-    model: str = AGENT_MODEL
+    model: str = SKILL_MODEL
     tools: List[Callable[..., Any]] = []
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -54,21 +59,27 @@ class AgentBase:
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         knowledge_path: Optional[str] = None,
         mcp_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = None,
-    ) -> AgentResult:
-        """Run one turn of the agent: LLM call + optional tool execution."""
+        mcp_tools: Optional[List[Dict[str, Any]]] = None,
+        images: Optional[List[str]] = None,
+    ) -> SkillResult:
+        """Run one turn of the skill: LLM call + optional tool execution."""
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": self.system_prompt}
         ]
         if conversation_history:
             messages.extend(conversation_history[-20:])
-        messages.append({"role": "user", "content": user_message})
+            
+        user_turn: Dict[str, Any] = {"role": "user", "content": user_message}
+        if images:
+            user_turn["images"] = images
+        messages.append(user_turn)
 
-        ollama_tools = self._build_tool_specs()
+        ollama_tools = self._build_tool_specs(mcp_tools=mcp_tools)
 
         try:
             response = ollama.chat(model=self.model, messages=messages, tools=ollama_tools or None)
         except Exception as e:  # noqa: BLE001
-            return AgentResult(content=f"Agent LLM error: {e}", error=str(e))
+            return SkillResult(content=f"Skill LLM error: {e}", error=str(e))
         msg = response.message
         assistant_content = getattr(msg, "content", "") or ""
 
@@ -96,7 +107,7 @@ class AgentBase:
             except Exception as e:  # noqa: BLE001
                 assistant_content = f"{assistant_content}\nTool follow-up error: {e}"
 
-        return AgentResult(
+        return SkillResult(
             content=assistant_content,
             tool_calls=tool_calls,
             knowledge_updated=knowledge_updated,
@@ -151,7 +162,7 @@ class AgentBase:
     # Tool specs for Ollama
     # ════════════════════════════════════════════════════════════════
 
-    def _build_tool_specs(self) -> List[Dict[str, Any]]:
+    def _build_tool_specs(self, mcp_tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         specs: List[Dict[str, Any]] = []
 
         for name, func in self._tool_registry.items():
@@ -187,6 +198,7 @@ class AgentBase:
                 }
             )
 
+        # Knowledge base tool
         specs.append(
             {
                 "type": "function",
@@ -204,11 +216,33 @@ class AgentBase:
             }
         )
 
+        # MCP tools
+        for mcp in (mcp_tools or []):
+            mcp_id = mcp.get("id") or mcp.get("name")
+            if not mcp_id:
+                continue
+            specs.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": f"mcp_{mcp_id}",
+                        "description": mcp.get("description") or f"MCP tool: {mcp.get('name', mcp_id)}",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {"type": "string", "description": "Command or input parameter for the tool"},
+                                "query": {"type": "string", "description": "Query or parameter for the tool"},
+                            },
+                        },
+                    },
+                }
+            )
+
         return specs
 
 
 # ══════════════════════════════════════════════════════════════════
-# Built-in system tools (available to all agents)
+# Built-in system tools (available to all skills)
 # ══════════════════════════════════════════════════════════════════
 
 

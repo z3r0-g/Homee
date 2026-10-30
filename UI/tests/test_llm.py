@@ -59,10 +59,14 @@ def _tmp_settings(tmp_path, monkeypatch):
 
 
 def test_default_local_model_matches_installer(_tmp_settings):
-    # install.sh pulls qwen2.5:7b; the router default must be the same tag,
-    # otherwise a fresh install fails first chat with "model not found".
+    # Both install.sh and the router pick the default by host RAM
+    # (llama3.2:3b for all hosts); the router default must
+    # equal that rule, otherwise a fresh install fails first chat with
+    # "model not found".
+    from UI import model_catalog
     router = LLMRouter(client=FakeClient())
-    assert router.settings["llm"]["local_model"] == "qwen2.5:7b"
+    assert router.settings["llm"]["local_model"] == model_catalog.default_model(
+        model_catalog.host_total_ram_gb())
     assert router.settings["llm"]["provider"] == "local"
 
 
@@ -77,6 +81,9 @@ def test_status_offline(_tmp_settings):
 
 
 def test_status_reports_installed_configured_model(_tmp_settings):
+    # Pin the configured model: this test is about status reporting,
+    # not about which default the host's RAM selects.
+    _tmp_settings.write_text('{"llm": {"local_model": "qwen2.5:7b"}}')
     router = LLMRouter(client=FakeClient(models=["qwen2.5:7b", "llama3.1:8b"]))
     status = router.ollama_status()
     assert status["running"] is True
@@ -93,6 +100,8 @@ def test_model_name_matching_treats_missing_tag_as_latest():
 
 
 def test_query_local_model_not_found_is_actionable(_tmp_settings):
+    # Pin the configured model so the hint names the model in the error.
+    _tmp_settings.write_text('{"llm": {"local_model": "qwen2.5:7b"}}')
     router = LLMRouter(client=FakeClient(
         chat_error=Exception("model 'qwen2.5:7b' not found, try pulling it")))
     result = router.query_local([{"role": "user", "content": "hi"}])
@@ -122,9 +131,12 @@ def test_chat_does_not_fall_back_to_unconfigured_remote(_tmp_settings):
 
 
 def test_chat_falls_back_to_configured_remote(_tmp_settings):
+    # Remote fallback requires local_cloud mode (the mode switcher governs
+    # fallback; local_local must NOT fall back to remote even if configured).
     import json
     _tmp_settings.write_text(json.dumps(
-        {"llm": {"remote_base_url": "https://example.invalid/v1"}}))
+        {"llm": {"mode": "local_cloud",
+                 "remote_base_url": "https://example.invalid/v1"}}))
     router = LLMRouter(client=FakeClient(
         chat_error=Exception("Connection refused")))
     router.query_remote = lambda *a, **k: {
@@ -157,3 +169,116 @@ def test_pull_empty_model_is_an_error(_tmp_settings):
     router = LLMRouter(client=FakeClient())
     job = router.start_pull("   ")
     assert job["state"] == "error"
+
+
+def test_chat_local_local_does_not_fall_back_to_remote(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_local",
+                 "remote_base_url": "https://example.invalid/v1"}}))
+    router = LLMRouter(client=FakeClient(
+        chat_error=Exception("Connection refused")))
+    calls = []
+    router.query_remote = lambda *a, **k: calls.append(1) or {
+        "message": {"role": "assistant", "content": "remote", "tool_calls": []}}
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert calls == []
+    assert "not reachable" in result["message"]["content"]
+
+
+def test_chat_local_local_falls_back_to_secondary_model(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_local", "secondary_model": "llama3.1:8b"}}))
+    client = FakeClient(chat_error=Exception("model 'qwen2.5:7b' not found"))
+
+    def chat_then_ok(model, messages, tools=None):
+        if model == "llama3.1:8b":
+            from types import SimpleNamespace
+            return SimpleNamespace(
+                message=SimpleNamespace(role="assistant",
+                                        content="secondary ok",
+                                        tool_calls=[]))
+        raise Exception("model 'qwen2.5:7b' not found")
+
+    client.chat = chat_then_ok
+    router = LLMRouter(client=client)
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert result["message"]["content"] == "secondary ok"
+
+
+def test_chat_local_remote_local_falls_back_to_secondary_host(_tmp_settings):
+    import json
+    _tmp_settings.write_text(json.dumps(
+        {"llm": {"mode": "local_remote_local",
+                 "secondary_base_url": "http://otherhost:11434"}}))
+    seen_hosts = []
+
+    def factory(host):
+        seen_hosts.append(host)
+        if host == "http://otherhost:11434":
+            return FakeClient(chat_text="secondary host ok")
+        return FakeClient(chat_error=Exception("Connection refused"))
+
+    router = LLMRouter(client=FakeClient(chat_error=Exception("Connection refused")),
+                       client_factory=factory)
+    result = router.chat([{"role": "user", "content": "hi"}])
+    assert result["message"]["content"] == "secondary host ok"
+    assert "http://otherhost:11434" in seen_hosts
+
+
+# ── Model delete + catalog ────────────────────────────────────────────
+
+class DeleteRecorder:
+    """Fake ollama client recording delete() calls."""
+
+    def __init__(self, fail=False):
+        self.deleted = []
+        self.fail = fail
+
+    def delete(self, model):
+        if self.fail:
+            raise Exception("model not found")
+        self.deleted.append(model)
+
+
+def test_delete_model_calls_client():
+    router = LLMRouter(client=DeleteRecorder())
+    result = router.delete_model("qwen2.5:7b")
+    assert result["success"] is True
+    assert router._client.deleted == ["qwen2.5:7b"]
+
+
+def test_delete_model_failure_is_a_failure_dict():
+    router = LLMRouter(client=DeleteRecorder(fail=True))
+    result = router.delete_model("nope:1b")
+    assert "error" in result
+
+
+def test_catalog_filters_by_host_ram(monkeypatch):
+    from UI import model_catalog
+    monkeypatch.setattr(model_catalog, "host_ram_gb", lambda: 6.0)
+    cat = model_catalog.catalog()
+    assert cat["size_cap_gb"] == 6
+    assert cat["ollama_search_url"] == "https://ollama.com/search?c=local&s=6"
+    names = [m["name"] for m in cat["models"]]
+    assert "qwen2.5:7b" in names
+    assert "gemma3:27b" not in names
+    assert "llama3.1:70b" not in names
+    assert cat["hidden_count"] == len(model_catalog.MODELS) - len(names)
+
+
+def test_catalog_filter_by_capability():
+    from UI import model_catalog
+    vision = [m for m in model_catalog.MODELS if "vision" in m["capabilities"]]
+    assert vision and all(m["size_gb"] for m in vision)
+    assert "llava:7b" in [m["name"] for m in vision]
+
+
+def test_default_model_by_ram():
+    from UI import model_catalog
+    assert model_catalog.default_model(8.0) == "llama3.2:3b"
+    assert model_catalog.default_model(11.9) == "llama3.2:3b"
+    assert model_catalog.default_model(12.0) == "llama3.2:3b"
+    assert model_catalog.default_model(16.0) == "llama3.2:3b"
+    assert model_catalog.default_model(None) == "llama3.2:3b"

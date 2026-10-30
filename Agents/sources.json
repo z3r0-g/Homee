@@ -1,5 +1,0 @@
-{
-  "local_dir": "Agents/local",
-  "git_repos": [],
-  "notes": "Add git repo URLs here to load remote agents. Each repo is cloned into Agents/remote/<name>/ and its .py modules are scanned for AgentBase subclasses."
-}
