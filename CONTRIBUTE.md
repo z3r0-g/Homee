@@ -1,34 +1,21 @@
-# Contributing skills to Homee
+# Contributing to Homee
 
-Homee discovers skills from two places, and both work the same way: put
-files in a directory, and Homee scans them.
+Homee is an offline-first AI Agent platform designed to be extensible through two complementary tool mechanisms: **Skills** and **MCP Servers**.
+
+Homee discovers skills from two places, and both work the same way: put files in a directory, and Homee scans them.
 
 - **Local:** `Skills/local/*.py` in this repo (scanned on startup).
-- **Remote:** any public git repo, synced from the UI — open **Settings →
-  Skills**, paste the repo URL, and press **Sync Skills**.
-  Homee clones it to `Skills/remote/<repo-name>` (depth 1) and pulls
-  `--ff-only` on every re-sync.
+- **Remote:** any public git repo, synced from the UI — open **Settings → Skills**, paste the repo URL, and press **Sync Skills**. Homee clones it to `Skills/remote/<repo-name>` (depth 1) and pulls `--ff-only` on every re-sync.
 
-A repo can ship **skill Python scripts**, **skill MD files**, or
-both. Files whose names start with `_` are skipped.
+A repo can ship **skill Python scripts**, **skill MD files**, or both. Files whose names start with `_` are skipped.
 
-> **Trust note:** skill `.py` files are imported and executed in-process.
-> Only sync repos you trust, the same way you would only install software
-> you trust.
+> **Trust note:** skill `.py` files are imported and executed in-process. Only sync repos you trust, the same way you would only install software you trust.
 
-## Repo layout
+---
 
-```
-my-agents/
-├── weather.py              # a SkillBase subclass (code skill)
-├── librarian.md          # a skill (data only)
-└── README.md               # what your agents do (optional, recommended)
-```
+## 1. Skill Scripts (`.py`)
 
-## Agent scripts (`.py`)
-
-Subclass `SkillBase` from `Skills/app.py`. Homee finds every subclass in
-every scanned `.py` file — one file may hold several agents.
+Subclass `SkillBase` from `Skills/app.py`. Homee finds every subclass in every scanned `.py` file — one file may hold several skills.
 
 ```python
 from Skills.app import SkillBase
@@ -40,37 +27,42 @@ class TideSkill(SkillBase):
         "You are a harbour assistant. Answer tide questions briefly "
         "and always give the next high and low tide."
     )
-    model = "llama3.2:3b"  # use a full tag: bare "llama3.2" resolves to
-                           # :latest, which an installed llama3.2:3b does
-                           # NOT satisfy, and first chat will fail.
+    model = "llama3.2:3b"  # use a full tag: bare "llama3.2" resolves to :latest
 ```
 
-The fields that matter:
+### Key SkillBase Properties
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Display name. Also the agent's id in the UI and the toggle/disable key. |
-| `description` | One line, shown on the agent card. |
-| `system_prompt` | The system prompt every chat turn starts with. |
-| `model` | Ollama model for this agent (defaults to the platform default). |
-| `tools` | Optional list of plain Python callables. Each becomes an Ollama tool; the function name and docstring are what the model sees, so document them well. |
+| `name` | Display name. Also the skill's id in the UI and the toggle/disable key. |
+| `description` | One line summary, shown on the skill card and marketplace. |
+| `system_prompt` | The persona and system instructions used during bot chats and runs. |
+| `model` | Model for this skill (defaults to the host's configured model). |
+| `tools` | Optional list of plain Python callables. Each becomes an LLM tool. |
 
-You normally do not override `execute()` — the base implementation builds
-the system + history + user messages, calls Ollama with your tools, and
-returns a `SkillResult`. Override it only when a skill needs custom
-control flow (for example, calling an MCP before answering).
+### MCP Tool Access in Skills
 
-Keep skill modules dependency-light: the standard library, `ollama`, and
-`Skills.app` are safe. Anything else must be installed on the host or the
-module is skipped (the skip is logged, not fatal).
+Every skill execution turn automatically receives access to all host MCP servers and bot-assigned MCPs:
+- Built-in MCPs: `mcp_system_disk`, `mcp_system_shell`
+- User-installed MCPs: `mcp_<server_id>` (e.g. `mcp_github`, `mcp_fetch`, `mcp_slack`, `mcp_weather`, etc.)
 
-## Skill MD files
+Tool results are JSON-serialized and returned to the model automatically.
 
-A skill is data, not code: a name, a system prompt, and optional
-skills/abilities. It appears in the **New Bot** skill picker and in
-**Settings → Skills** after a sync.
+### Multimodal Image Support
 
-```md
+If your skill generates diagrams or images (e.g. SVG, base64 data URIs, or URLs), include them in your response as standard Markdown:
+```markdown
+![Generated Chart](data:image/png;base64,iVBORw0KGgo...)
+```
+The Chat UI automatically renders these as responsive images with captions.
+
+---
+
+## 2. Skill Markdown Files (`.md`)
+
+A skill can also be defined declaratively via Markdown with YAML frontmatter:
+
+```markdown
 ---
 name: Librarian
 description: Precise answers with sources, no guessing.
@@ -87,34 +79,33 @@ You are a careful librarian. If you do not know something, say so, and never inv
 ```
 
 Rules:
+- `name` is required. `id` defaults to the file stem (`librarian.md` → `librarian`).
+- Re-syncing **upserts by id**: edit a skill in your repo, press **Sync Skills** in the UI, and Homee picks up the update.
 
-- `name` is required. `id` defaults to the file stem (`librarian.md` →
-  `librarian`) when omitted.
-- One skill per file; ship several skills as several files.
-- Unknown sections are ignored; missing `description`, `skills`, and
-  `abilities` default to empty.
-- Re-syncing **upserts by id**: edit a skill in your repo, press
-  **Sync Skills** again, and Homee picks up the edit.
+---
 
-## Loading your repo in Homee
+## 3. Contributing MCP Servers
 
-1. Push the repo somewhere Homee can clone (GitHub, Gitea, a local git
-   server — anything `git clone` understands).
-2. Open Homee → **Settings → Skills**.
-3. Paste the repo URL into **Remote Skills Repo** and press **Sync Skills**.
-4. Your skills appear under **Active Skills** (local skills are enabled
-   by default; the ✕ button disables any skill, the ✓ re-enables it),
-   and your skills appear in the **New Bot** picker.
-5. Create a bot, pick the skill, and chat.
+Homee integrates with the **Official Model Context Protocol Registry** (`registry.modelcontextprotocol.io`) and **Smithery**.
 
-To test locally before pushing, drop skill modules into `Skills/local/`
-(restart the UI service — discovery runs on startup) or skill MD files
-directly into `Skills/` (picked up on next load).
+To make your MCP server available in Homee:
+1. Ensure your server exposes an HTTP or SSE endpoint.
+2. If your server requires authentication, specify `requires_auth: true` and document the required environment variable or header (`Authorization: Bearer <token>` or `x-api-key: <key>`).
+3. Servers without authentication install in **one click** with zero configuration required.
 
-## Checklist before sharing a repo
+---
 
-- [ ] Every skill has a distinct `name` (collisions overwrite silently).
-- [ ] Every `model` uses a full tag (`llama3.2:3b`, not `llama3.2`).
-- [ ] Skill modules import cleanly with only stdlib + `ollama` + `Skills.app`.
-- [ ] Skill MD parses (frontmatter + sections as above).
-- [ ] A README says what each skill does and what model it expects.
+## 4. Testing Your Changes
+
+Before submitting pull requests:
+```bash
+# Run unit & integration tests
+pytest UI/tests MCP/tests Skills/tests
+
+# Run Playwright E2E browser tests
+pytest test_homee_e2e.py
+
+# Run full test suite
+pytest
+```
+Ensure all tests pass before submitting.

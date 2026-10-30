@@ -1,30 +1,19 @@
-"""Leaderboard snapshots (mcpmarket.com, seeded 2026-10-27).
+"""Leaderboard & Marketplace registry sync.
 
-The snapshots are data, not code: re-seed the JSON files under data/
-when the rankings change. The UI serves them as-is; nothing here
-fetches the leaderboard pages at runtime, so a tab still renders its
-remote cards when the network or the leaderboard site is unreachable.
+Delegates to UI.registry_sync for official MCP and Smithery data.
+Retains backward-compatible load_leaderboard(kind) interface.
 """
 
-import json
-from pathlib import Path
+from __future__ import annotations
 
-_DATA = Path(__file__).resolve().parent / "data"
+from typing import Dict, Any
+from .registry_sync import sync_mcp_registry, sync_skills_registry
 
 
-def load_leaderboard(kind: str) -> dict:
-    """Load one snapshot: kind is 'skills' or 'mcp'.
-
-    Returns the snapshot dict. A missing or corrupt file yields an
-    empty snapshot rather than a 500, so the tab degrades to local
-    content only.
-    """
-    path = _DATA / f"leaderboard_{kind}.json"
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data, dict) and isinstance(data.get("entries"), list):
-            return data
-    except (OSError, ValueError):
-        pass
+def load_leaderboard(kind: str) -> Dict[str, Any]:
+    """Load registry snapshot for kind ('mcp' or 'skills')."""
+    if kind == "mcp":
+        return sync_mcp_registry(force_remote=False)
+    if kind == "skills":
+        return sync_skills_registry(force_remote=False)
     return {"source": "", "source_url": "", "snapshot_date": "", "entries": []}

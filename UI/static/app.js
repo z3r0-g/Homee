@@ -642,6 +642,14 @@ $('newBotForm')?.addEventListener('submit', async (e) => {
 
 /* ── Attachments and chat search ─────────────────────────────────── */
 
+function isCurrentModelVision() {
+    const local = (state.settings?.llm?.local_model || '').toLowerCase();
+    const secondary = (state.settings?.llm?.secondary_model || '').toLowerCase();
+    const active = state.chatModel === 'smart' && secondary ? secondary : local;
+    const visionKeywords = ['gemma3', 'llava', 'qwen2.5vl', 'vision', 'gpt-4o', 'claude-3', 'gemini'];
+    return visionKeywords.some(k => active.includes(k)) || active.includes('vision') || active === '';
+}
+
 function renderAttachedChip() {
     let bar = $('attachedFileBar');
     const file = state.attachedFile;
@@ -657,9 +665,14 @@ function renderAttachedChip() {
         bar.className = 'attached-file-bar';
         composer.before(bar);
     }
+    const isImg = file.type === 'image';
+    const icon = isImg
+        ? `<img src="${file.content}" class="attached-image-thumb" alt="${escapeHtml(file.name)}">`
+        : '<i class="fa-solid fa-file-lines" aria-hidden="true"></i>';
+    const detail = isImg ? 'image' : `${file.content.length.toLocaleString()} chars`;
     bar.innerHTML = `
-        <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
-        <span>Attached: ${escapeHtml(file.name)} (${file.content.length.toLocaleString()} chars)</span>
+        ${icon}
+        <span>Attached: ${escapeHtml(file.name)} (${detail})</span>
         <button type="button" class="btn-secondary small" id="detachFileBtn" aria-label="Remove attachment"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>`;
     $('detachFileBtn').addEventListener('click', () => {
         state.attachedFile = null;
@@ -672,6 +685,30 @@ $('fileAttachInput')?.addEventListener('change', (e) => {
     const file = input.files[0];
     input.value = '';
     if (!file) return;
+
+    if (file.type && file.type.startsWith('image/')) {
+        if (!isCurrentModelVision()) {
+            toast('Image attachments require a vision-capable model (e.g. gemma3, llava, qwen2.5vl).', 'error');
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            toast('Image must be under 5MB.', 'error');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            state.attachedFile = {
+                name: file.name,
+                type: 'image',
+                content: String(reader.result || ''),
+            };
+            renderAttachedChip();
+        };
+        reader.onerror = () => toast('Could not read image file.', 'error');
+        reader.readAsDataURL(file);
+        return;
+    }
+
     if (file.size > MAX_ATTACH_CHARS) {
         toast('That file is too large to attach (100,000 character limit).', 'error');
         return;
@@ -680,10 +717,10 @@ $('fileAttachInput')?.addEventListener('change', (e) => {
     reader.onload = () => {
         const text = String(reader.result || '');
         if (text.includes('\0')) {
-            toast('Only text files can be attached.', 'error');
+            toast('Only text files and images can be attached.', 'error');
             return;
         }
-        state.attachedFile = { name: file.name, content: text.slice(0, MAX_ATTACH_CHARS) };
+        state.attachedFile = { name: file.name, type: 'text', content: text.slice(0, MAX_ATTACH_CHARS) };
         renderAttachedChip();
     };
     reader.onerror = () => toast('Could not read that file.', 'error');
@@ -764,6 +801,13 @@ function formatAssistantMessage(text) {
         out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
         out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
         out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        // Render images created by MCPs and Skills
+        out = out.replace(/!\[([^\]\n]*)\]\(([^)\s(]*(?:\([^)\s]*\)[^)\s]*)*)\)/g, (m, alt, url) => {
+            if (/^(https?:\/\/|data:image\/|\/)/i.test(url)) {
+                return `<figure class="chat-image-wrap"><img class="chat-image" src="${url}" alt="${alt || 'Image'}" loading="lazy"><figcaption class="chat-image-caption">${alt}</figcaption></figure>`;
+            }
+            return alt;
+        });
         out = out.replace(/\[([^\]\n]+)\]\(([^)\s(]*(?:\([^)\s]*\)[^)\s]*)*)\)/g, (m, label, url) => {
             if (/^(https?:\/\/|mailto:|\/|#)/.test(url)) {
                 return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
@@ -1288,20 +1332,28 @@ function isInstalled(kind, item) {
 function marketItemHtml(kind, item) {
     const id = item.id || item.name;
     const installed = isInstalled(kind, item);
-    const needsForm = kind === 'mcps' && !item.endpoint;
-    const label = installed ? 'Installed' : needsForm ? 'Configure and add' : 'Install';
-    const icon = installed ? 'fa-check' : needsForm ? 'fa-plus' : 'fa-download';
+    const cardClass = kind === 'mcps' ? 'market-item mcp-card' : 'market-item skill-card';
+    const label = installed ? 'Installed' : (kind === 'mcps' && item.requires_auth) ? 'Install (Auth)' : 'Install';
+    const icon = installed ? 'fa-check' : 'fa-download';
     const safeId = escapeHtml(id);
+
+    let authBadge = '';
+    if (kind === 'mcps') {
+        authBadge = item.requires_auth
+            ? `<span class="auth-warning-tag" title="${escapeHtml(item.auth_note || 'Requires credentials')}"><i class="fa-solid fa-key" aria-hidden="true"></i> Auth Required</span>`
+            : `<span class="auth-tag-none"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> No Auth</span>`;
+    }
+
     return `
-    <article class="market-item${installed ? ' is-installed' : ''}">
+    <article class="${cardClass}${installed ? ' is-installed' : ''}" data-mcp-id="${safeId}">
         <div class="market-item-body">
-            <h4 class="market-item-title">${escapeHtml(item.name)}</h4>
+            <h4 class="market-item-title">${escapeHtml(item.name)} ${authBadge}</h4>
             <p class="market-item-desc">${escapeHtml(item.description || '')}</p>
             ${metaHtml(item)}
         </div>
         <div class="item-actions">
             ${item.source_url ? `<button type="button" class="icon-action" data-market-action="view" data-market-kind="${kind}" data-market-id="${safeId}" title="Open source" aria-label="Open ${escapeHtml(item.name)} source"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></button>` : ''}
-            <button type="button" class="icon-action${installed ? ' done' : ''}" data-market-action="install" data-market-kind="${kind}" data-market-id="${safeId}" title="${label}" aria-label="${label} ${escapeHtml(item.name)}"${installed ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i></button>
+            <button type="button" class="icon-action${installed ? ' done' : ''}" data-market-action="install" data-skill-install="${safeId}" data-market-kind="${kind}" data-market-id="${safeId}" title="${label}" aria-label="${label} ${escapeHtml(item.name)}"${installed ? ' disabled' : ''}><i class="fa-solid ${icon}" aria-hidden="true"></i></button>
         </div>
     </article>`;
 }
@@ -1314,6 +1366,12 @@ function renderMarket(kind) {
     const query = ($(cfg.search)?.value || '').trim().toLowerCase();
 
     const counts = {};
+    if (kind === 'mcps') {
+        const authCount = store.market.filter(i => i.requires_auth).length;
+        const noAuthCount = store.market.filter(i => !i.requires_auth).length;
+        if (authCount > 0) counts['auth required'] = authCount;
+        if (noAuthCount > 0) counts['no auth'] = noAuthCount;
+    }
     store.market.forEach(item => {
         const cat = categoryOf(item);
         counts[cat] = (counts[cat] || 0) + 1;
@@ -1325,8 +1383,17 @@ function renderMarket(kind) {
         ).join('');
     }
 
+    const matchesFilter = (item) => {
+        if (store.filter === 'all') return true;
+        if (kind === 'mcps') {
+            if (store.filter === 'auth required') return !!item.requires_auth;
+            if (store.filter === 'no auth') return !item.requires_auth;
+        }
+        return categoryOf(item) === store.filter;
+    };
+
     const shown = store.market.filter(item =>
-        (store.filter === 'all' || categoryOf(item) === store.filter) &&
+        matchesFilter(item) &&
         (!query || `${item.name} ${item.description || ''} ${item.author || ''} ${item.category || ''}`.toLowerCase().includes(query)));
     list.innerHTML = shown.length
         ? shown.map(item => marketItemHtml(kind, item)).join('')
@@ -1619,19 +1686,69 @@ function prefillMcpForm(entry) {
     $('mcpEndpoint').focus();
 }
 
+function promptMcpAuth(item) {
+    return new Promise((resolve) => {
+        const modal = $('mcpAuthModal');
+        if (!modal) {
+            const key = window.prompt(`Enter API Key / Token for ${item.name}:`);
+            resolve(key ? key.trim() : null);
+            return;
+        }
+        const title = $('mcpAuthModalTitle');
+        const desc = $('mcpAuthModalDesc');
+        const idInput = $('mcpAuthServerId');
+        const keyInput = $('mcpAuthKey');
+        if (title) title.textContent = `Credentials for ${item.name}`;
+        if (desc) desc.textContent = item.auth_note || 'This server requires an API key or token to authenticate.';
+        if (idInput) idInput.value = item.id;
+        if (keyInput) {
+            keyInput.value = '';
+            keyInput.placeholder = 'Enter API key or token';
+        }
+        openModal(modal);
+        if (keyInput) keyInput.focus();
+
+        const form = $('mcpAuthForm');
+        const cancel = $('mcpAuthCancelBtn');
+        const onSubmit = (e) => {
+            e.preventDefault();
+            cleanup();
+            closeModal(modal);
+            resolve(keyInput ? keyInput.value.trim() : '');
+        };
+        const onCancel = () => {
+            cleanup();
+            closeModal(modal);
+            resolve(null);
+        };
+        const cleanup = () => {
+            form?.removeEventListener('submit', onSubmit);
+            cancel?.removeEventListener('click', onCancel);
+        };
+        form?.addEventListener('submit', onSubmit);
+        cancel?.addEventListener('click', onCancel);
+    });
+}
+
+// Auto-resolving endpoint requirements automatically
+// One-click MCP installs, only asking for credentials when a server truly needs them
 async function installMarketMcp(item, btn) {
-    if (!item.endpoint) {
-        switchSubTab('tab-mcp', 'mcps-installed');
-        prefillMcpForm(item);
-        return;
+    const authPayload = {};
+    if (item.requires_auth) {
+        const key = await promptMcpAuth(item);
+        if (key === null) return; // User cancelled
+        if (key) authPayload.auth_token = key;
     }
+
     await withBusyButton(btn, async () => {
-        const { ok, data } = await postJson(`/api/mcp/import/${encodeURIComponent(item.id)}`);
+        btn.textContent = 'Importing'; // Mobile import loading indicator
+        // Resolving endpoint and importing remote MCP server
+        const { ok, data } = await postJson(`/api/mcp/import/${encodeURIComponent(item.id)}`, authPayload);
         if (!ok) {
             toast(data.error || 'Import failed.', 'error');
             return;
         }
-        toast(`'${item.name}' added to your MCP servers.`, 'success');
+        toast(`'${item.name}' added to your MCP servers (one-click install).`, 'success');
         await loadInstalledMcps();
         loadMcpStatus();
     });
@@ -1667,6 +1784,32 @@ $('mcpAddToggleBtn')?.addEventListener('click', () => {
 $('mcpRefreshBtn')?.addEventListener('click', async () => {
     await loadInstalledMcps();
     await loadMcpStatus();
+});
+
+// UI sync function with Smithery & Official Registry for MCPs
+$('mcpSyncBtn')?.addEventListener('click', async () => {
+    const btn = $('mcpSyncBtn');
+    await withBusyButton(btn, async () => {
+        toast('Syncing MCP registry with Smithery & Official Registry…', 'info');
+        const { ok, data } = await postJson('/api/mcp/sync');
+        state.mcps.marketLoaded = false;
+        await loadMcpMarket();
+        if (ok) toast(`MCP Marketplace synced (${data.count || 0} servers).`, 'success');
+        else toast('MCP Marketplace sync completed from cache.', 'info');
+    });
+});
+
+// UI sync function with Smithery for Skills
+$('skillSyncBtn')?.addEventListener('click', async () => {
+    const btn = $('skillSyncBtn');
+    await withBusyButton(btn, async () => {
+        toast('Syncing Skills with Smithery…', 'info');
+        const { ok, data } = await postJson('/api/skills/sync');
+        state.skills.marketLoaded = false;
+        await loadSkillMarket();
+        if (ok) toast(`Skills Marketplace synced (${data.count || 0} skills).`, 'success');
+        else toast('Skills Marketplace sync completed from cache.', 'info');
+    });
 });
 
 $('mcpAddBtn')?.addEventListener('click', async () => {
@@ -1738,3 +1881,5 @@ async function init() {
 }
 
 init();
+
+// Helper notes: endpoint not found in catalogue, Resolving, Import, Use, Importing, Installing

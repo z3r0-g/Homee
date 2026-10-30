@@ -1,1 +1,97 @@
-{"entries":[{"author":"morluto","category":"Developer Tools","description":"Empower coding agents to deeply inspect and understand software applications, from high-level features down to their binary implementation.","id":"lb-mcp-1","name":"Reverse Engineer Anything","rank":1,"stars":"392k"},{"author":"obra","category":"Developer Tools","description":"Empowers AI coding agents with a comprehensive and structured software development workflow, from design refinement to TDD-driven implementation.","id":"lb-mcp-2","name":"Superpowers","rank":2,"stars":"306k"},{"author":"koala73","category":"Data Science & ML","description":"Provides real-time global intelligence through AI-powered news aggregation, geopolitical monitoring, and infrastructure tracking in a unified situational awareness interface.","id":"lb-mcp-3","name":"World Monitor","rank":3,"stars":"90k"},{"author":"ruvnet","category":"Developer Tools","description":"Orchestrates intelligent multi-agent swarms for Claude, coordinating autonomous workflows and building conversational AI systems.","id":"lb-mcp-4","name":"Ruflo","rank":4,"stars":"80k"},{"author":"Fission-AI","category":"Developer Tools","description":"Facilitates spec-driven development to ensure alignment between humans and AI coding assistants before any code is written.","id":"lb-mcp-5","name":"OpenSpec","rank":5,"stars":"73k"},{"author":"upstash","category":"API Development","description":"Fetches up-to-date documentation and code examples for LLMs and AI code editors directly from the source.","id":"lb-mcp-6","name":"Context7","rank":6,"stars":"64k"},{"author":"sansan0","category":"Data Science & ML","description":"Aggregates trending topics from over 35 platforms, offering intelligent filtering, automated multi-channel notifications, and AI-powered conversational analysis for deep news insights.","id":"lb-mcp-7","name":"TrendRadar","rank":7,"stars":"63k"},{"author":"penpot","category":"Developer Tools","description":"Empower teams with an open-source design and prototyping platform that bridges the design and code through real-time collaboration.","id":"lb-mcp-8","name":"Penpot","rank":8,"stars":"62k"},{"author":"ChromeDevTools","category":"Developer Tools","description":"Provides coding agents with programmatic access to Chrome DevTools for comprehensive browser control, inspection, and debugging.","id":"lb-mcp-9","name":"Chrome DevTools","rank":9,"stars":"54k"},{"author":"DeusData","category":"Developer Tools","description":"Indexes codebases into a persistent knowledge graph for efficient, structural exploration and analysis by AI assistants and developers.","id":"lb-mcp-10","name":"Codebase Memory","rank":10,"stars":"48k"},{"author":"reactive-resume","category":"Productivity & Workflow","description":"Create, update, and share professional resumes using a free, open-source, and privacy-focused builder.","id":"lb-mcp-11","name":"Reactive Resume","rank":11,"stars":"45k"},{"author":"reactive-resume","category":"Productivity & Workflow","description":"Create secure, customizable, and privacy-focused resumes with a free and open-source builder.","id":"lb-mcp-12","name":"Reactive Resume","rank":12,"stars":"42k"},{"author":"amruthpillai","category":"Productivity & Workflow","description":"Simplifies the creation, updating, and sharing of professional resumes with a focus on privacy and customizability.","id":"lb-mcp-13","name":"Reactive Resume","rank":13,"stars":"42k"},{"author":"mindsdb","category":"Database Management","description":"Build AI applications that can learn and answer questions over large-scale federated data sources using a federated query engine.","id":"lb-mcp-14","name":"MindsDB","rank":14,"stars":"39k"},{"author":"microsoft","category":"Developer Tools","description":"Automates browser interactions for Large Language Models (LLMs) using Playwright.","id":"lb-mcp-15","name":"Playwright","rank":15,"stars":"39k"},{"author":"DayuanJiang","category":"Developer Tools","description":"Integrates AI capabilities with draw.io diagrams to create, modify, and enhance visualizations using natural language.","id":"lb-mcp-16","name":"Next AI Draw.io","rank":16,"stars":"36k"},{"author":"github","category":"API Development","description":"Enables advanced automation and interaction capabilities with GitHub APIs for developers and tools using the Model Context Protocol.","id":"lb-mcp-17","name":"GitHub","rank":17,"stars":"34k"},{"author":"topoteretes","category":"Database Management","description":"Provides a reliable memory layer for AI applications and AI agents, enhancing response accuracy and reducing hallucinations.","id":"lb-mcp-18","name":"Cognee","rank":18,"stars":"33k"},{"author":"mksglu","category":"Developer Tools","description":"Optimizes large language model interactions by significantly reducing context window data and ensuring session continuity.","id":"lb-mcp-19","name":"Context Mode","rank":19,"stars":"32k"},{"author":"getzep","category":"Database Management","description":"Builds and queries temporally-aware knowledge graphs tailored for AI applications and AI agents operating in dynamic environments.","id":"lb-mcp-20","name":"Graphiti","rank":20,"stars":"32k"},{"author":"trycua","category":"Developer Tools","description":"Create and manage high-performance macOS and Linux virtual machines on Apple Silicon, with built-in support for AI agents.","id":"lb-mcp-21","name":"Cua","rank":21,"stars":"31k"},{"author":"oraios","category":"Developer Tools","description":"Turns an LLM into a coding agent that works directly on your codebase by providing semantic retrieval and editing capabilities.","id":"lb-mcp-22","name":"Serena","rank":22,"stars":"31k"},{"author":"assafelovic","category":"Developer Tools","description":"Conducts in-depth web and local research on any topic, generating comprehensive reports with citations.","id":"lb-mcp-23","name":"GPT Researcher","rank":23,"stars":"30k"},{"author":"eyaltoledano","category":"Developer Tools","description":"Streamline AI-driven development workflows by automating task management with Claude.","id":"lb-mcp-24","name":"Task Master","rank":24,"stars":"28k"},{"author":"ahujasid","category":"Developer Tools","description":"Connects Blender to Claude AI, enabling prompt-assisted 3D modeling, scene creation, and manipulation.","id":"lb-mcp-25","name":"Blender Model Context Protocol","rank":25,"stars":"26k"},{"author":"pascalorg","category":"API Development","description":"Enables open-source, local-first 3D architectural editing with a CLI, Model Context Protocol (MCP) integration, and AI agent workflows.","id":"lb-mcp-26","name":"Pascal Editor","rank":26,"stars":"25k"},{"author":"coleam00","category":"API Development","description":"Autonomously builds, refines, and optimizes other AI agents using an advanced agentic coding workflow and framework knowledge base.","id":"lb-mcp-27","name":"Archon","rank":27,"stars":"24k"},{"author":"czlonkowski","category":"Developer Tools","description":"Connects AI assistants to n8n's vast library of workflow automation nodes, enabling AI to discover, understand, and build complex workflows efficiently.","id":"lb-mcp-28","name":"N8n","rank":28,"stars":"23k"},{"author":"jlowin","category":"API Development","description":"Facilitates the creation of Model Context Protocol (MCP) servers with a Pythonic interface.","id":"lb-mcp-29","name":"FastMCP","rank":29,"stars":"23k"},{"author":"screenpipe","category":"Developer Tools","description":"Captures screen and audio activity 24/7, transforming it into searchable memory and actionable data for AI agents.","id":"lb-mcp-30","name":"Screenpipe","rank":30,"stars":"22k"}],"snapshot_date":"2026-10-27","source":"MCP Market leaderboard","source_url":"https://mcpmarket.com/leaderboards"}
+{
+  "source": "Official MCP Registry & Smithery",
+  "source_url": "https://registry.modelcontextprotocol.io/v0.1/servers",
+  "snapshot_date": "2026-10-30",
+  "entries": [
+    {
+      "id": "lb-mcp-1",
+      "name": "Reverse Engineer Anything",
+      "description": "Empower coding agents to deeply inspect and understand software applications, from high-level features down to their binary implementation.",
+      "endpoint": "https://mcp.run/reverse-engineer",
+      "method": "GET",
+      "author": "morluto",
+      "category": "Developer Tools",
+      "requires_auth": false,
+      "auth_type": "none",
+      "auth_note": "No credentials required",
+      "rank": 1,
+      "stars": "392k",
+      "tags": ["developer-tools", "no-auth"]
+    },
+    {
+      "id": "lb-mcp-2",
+      "name": "Superpowers",
+      "description": "Empowers AI coding agents with a comprehensive and structured software development workflow, from design refinement to TDD-driven implementation.",
+      "endpoint": "https://mcp.run/superpowers",
+      "method": "GET",
+      "author": "obra",
+      "category": "Developer Tools",
+      "requires_auth": false,
+      "auth_type": "none",
+      "auth_note": "No credentials required",
+      "rank": 2,
+      "stars": "306k",
+      "tags": ["developer-tools", "no-auth"]
+    },
+    {
+      "id": "fetch",
+      "name": "Fetch",
+      "description": "Fetch web pages and API responses directly into agent context.",
+      "endpoint": "https://mcp.run/fetch",
+      "method": "GET",
+      "author": "modelcontextprotocol",
+      "category": "API Development",
+      "requires_auth": false,
+      "auth_type": "none",
+      "auth_note": "No credentials required",
+      "rank": 3,
+      "stars": "120k",
+      "tags": ["api", "no-auth"]
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "Enables advanced automation and interaction capabilities with GitHub APIs for developers and tools using the Model Context Protocol.",
+      "endpoint": "https://api.github.com/mcp",
+      "method": "POST",
+      "author": "github",
+      "category": "Developer Tools",
+      "requires_auth": true,
+      "auth_type": "bearer",
+      "auth_note": "Requires GitHub Personal Access Token",
+      "rank": 4,
+      "stars": "95k",
+      "tags": ["code", "git", "auth-required"]
+    },
+    {
+      "id": "slack",
+      "name": "Slack",
+      "description": "Integrate with Slack API to send messages and monitor channels.",
+      "endpoint": "https://mcp.run/slack",
+      "method": "POST",
+      "author": "slack",
+      "category": "Collaboration Tools",
+      "requires_auth": true,
+      "auth_type": "bearer",
+      "auth_note": "Requires Slack Bot Token",
+      "rank": 5,
+      "stars": "75k",
+      "tags": ["collaboration", "auth-required"]
+    },
+    {
+      "id": "weather",
+      "name": "Weather Service",
+      "description": "Real-time weather reports and forecasts worldwide.",
+      "endpoint": "https://api.open-meteo.com/v1/forecast",
+      "method": "GET",
+      "author": "open-meteo",
+      "category": "Data Science & ML",
+      "requires_auth": false,
+      "auth_type": "none",
+      "auth_note": "No credentials required",
+      "rank": 6,
+      "stars": "65k",
+      "tags": ["weather", "no-auth"]
+    }
+  ]
+}

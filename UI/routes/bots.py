@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple, Type
 from flask import Blueprint, jsonify, request
 
 from ..config import MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
+from Skills.app import SkillBase
 from Skills.local.demo import get_server_health
+from Skills.registry import skill_registry
 
 bots_bp = Blueprint("bots", __name__)
 llm_router = LLMRouter()
@@ -17,6 +20,83 @@ llm_router = LLMRouter()
 
 def _iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _resolve_bot_skill(skill_id: Optional[str]) -> Tuple[Optional[Type[SkillBase]], str]:
+    """Resolve skill class and system prompt for a given skill_id.
+    Supports discovered skills (e.g. Burgundy, Demo), saved skills, and general skills.
+    """
+    if not skill_id:
+        return SkillBase, SkillBase.system_prompt
+
+    if skill_id == "demo":
+        cls = skill_registry.get_skill("Demo System Skill")
+        if cls:
+            return cls, cls().system_prompt
+    elif skill_id == "general":
+        return SkillBase, SkillBase.system_prompt
+
+    # Check skill registry first (discovered skills like 'Burgundy Weather Skill')
+    cls = skill_registry.get_skill(skill_id)
+    if cls:
+        return cls, cls().system_prompt
+
+    # Check saved skills repository
+    skills_repo.load()
+    saved = skills_repo.get(skill_id)
+    if saved:
+        # Dynamically subclass SkillBase to preserve saved system prompt & capabilities
+        prompt = saved.system_prompt or "You are a helpful assistant."
+        class DynamicSavedSkill(SkillBase):
+            name = saved.name
+            description = saved.description
+            system_prompt = prompt
+
+        return DynamicSavedSkill, prompt
+
+    return SkillBase, SkillBase.system_prompt
+
+
+def _get_mcp_executor_and_tools(bot: Bot):
+    """Build MCP executor callback and list of available MCP tool specs for this bot."""
+    import requests as _req
+
+    mcp_tools: List[Dict[str, Any]] = []
+    try:
+        resp = _req.get(f"{MCP_SERVICE_URL}/api/mcps", timeout=2)
+        if resp.status_code == 200:
+            data = resp.json()
+            raw_mcps = data.get("mcps", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+            for m in raw_mcps:
+                if m.get("enabled", True):
+                    if not bot.mcps or m["id"] in bot.mcps:
+                        mcp_tools.append(m)
+    except Exception:
+        pass
+
+    # Built-in system tools
+    system_mcps = [
+        {"id": "system_disk", "name": "system_disk", "description": "Check free disk space on root filesystem"},
+        {"id": "system_shell", "name": "system_shell", "description": "Execute a shell command"},
+    ]
+    for sm in system_mcps:
+        if not any(t["id"] == sm["id"] for t in mcp_tools):
+            mcp_tools.append(sm)
+
+    def mcp_executor(mcp_id: str, args: dict) -> dict:
+        try:
+            resp = _req.post(
+                f"{MCP_SERVICE_URL}/api/mcp/execute/{mcp_id}",
+                json=args,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"MCP service returned {resp.status_code}"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    return mcp_executor, mcp_tools
 
 
 @bots_bp.route("/api/server-health", methods=["GET"])
@@ -67,11 +147,7 @@ def create_bot():
 
 @bots_bp.route("/api/bots/search", methods=["GET"])
 def search_bots():
-    """Substring search across all bots' conversation history.
-
-    One search box replaces folders/tags/pins. Returns up to 30 matches
-    with a snippet around the hit; an empty query returns nothing.
-    """
+    """Substring search across all bots' conversation history."""
     query = (request.args.get("q") or "").strip()
     if not query:
         return jsonify({"query": "", "results": []})
@@ -149,8 +225,10 @@ def delete_bot(bot_id):
         return jsonify({"success": True})
     return jsonify({"error": "Bot not found"}), 404
 
+
 @bots_bp.route("/api/bots/<bot_id>/chat", methods=["POST"])
 def chat_bot(bot_id):
+    """Process a chat turn with a bot using its assigned skill, MCPs, and optional multimodal attachments."""
     bots_repo.load()
     skills_repo.load()
     bot = bots_repo.get(bot_id)
@@ -162,35 +240,74 @@ def chat_bot(bot_id):
     if not user_message:
         return jsonify({"error": "No message provided"}), 400
 
-    # Optional per-chat model override (the Fast/Smart composer switch).
-    # Only the model is overridable; the provider stays as configured.
     model = data.get("model") or None
 
-    # Optional attached file context (ask-about-a-file): text only,
-    # capped server-side, injected into this turn's messages but never
-    # persisted to conversation_history.
+    # Process attachments: text context and image attachments (vision)
     attachment_text = ""
+    images: List[str] = []
     for att in data.get("attachments") or []:
-        if isinstance(att, dict) and att.get("content"):
-            attachment_text += f"\n\nFile: {str(att.get('name', 'file'))[:200]}\n{str(att['content'])[:50_000]}"
+        if isinstance(att, dict):
+            att_content = str(att.get("content", ""))
+            if att.get("type") == "image" or att_content.startswith("data:image/"):
+                if "," in att_content:
+                    att_content = att_content.split(",", 1)[1]
+                images.append(att_content)
+            elif att_content:
+                attachment_text += f"\n\nFile: {str(att.get('name', 'file'))[:200]}\n{att_content[:50_000]}"
     attachment_text = attachment_text[:100_000]
 
     sent_at = _iso()
-    skill = skills_repo.get(bot.skill_id) if bot.skill_id else None
-    system_prompt = skill.system_prompt if skill else ""
 
-    messages = [{"role": "system", "content": system_prompt}]
-    if attachment_text.strip():
-        messages.append({"role": "system", "content": "The user attached file(s) for this chat. Use their contents to answer questions about them." + attachment_text})
-    messages.extend(bot.conversation_history[-20:])
-    messages.append({"role": "user", "content": user_message})
+    # Resolve skill assigned to the bot
+    agent_cls, system_prompt = _resolve_bot_skill(bot.skill_id)
+    mcp_executor, mcp_tools = _get_mcp_executor_and_tools(bot)
 
-    result = llm_router.chat(messages, model=model)
-    assistant_response = result.get("message", {}).get("content", "")
+    assistant_response = ""
+
+    # Execute with assigned skill if available
+    executed_skill = False
+    if agent_cls:
+        try:
+            skill_inst = agent_cls()
+            if model:
+                skill_inst.model = model
+            full_prompt = user_message
+            if attachment_text.strip():
+                full_prompt = f"User attached context:\n{attachment_text}\n\n{user_message}"
+            res = skill_inst.execute(
+                full_prompt,
+                conversation_history=bot.conversation_history[-20:],
+                knowledge_path=bot.knowledge_base_path,
+                mcp_executor=mcp_executor,
+                mcp_tools=mcp_tools,
+                images=images or None,
+            )
+            if not res.error:
+                assistant_response = res.content
+                executed_skill = True
+        except Exception:
+            executed_skill = False
+
+    # Fallback to LLM router if skill execution failed or returned error
+    if not executed_skill:
+        messages = [{"role": "system", "content": system_prompt}]
+        if attachment_text.strip():
+            messages.append({"role": "system", "content": "The user attached file(s) for this chat. Use their contents to answer questions about them." + attachment_text})
+        messages.extend(bot.conversation_history[-20:])
+        user_turn: Dict[str, Any] = {"role": "user", "content": user_message}
+        if images:
+            user_turn["images"] = images
+        messages.append(user_turn)
+
+        result = llm_router.chat(messages, model=model)
+        assistant_response = result.get("message", {}).get("content", "")
 
     received_at = _iso()
+    user_entry = {"role": "user", "content": user_message, "timestamp": sent_at}
+    if images:
+        user_entry["has_image"] = True
     bot.conversation_history.extend([
-        {"role": "user", "content": user_message, "timestamp": sent_at},
+        user_entry,
         {"role": "assistant", "content": assistant_response, "timestamp": received_at},
     ])
     bot.conversation_history = bot.conversation_history[-20:]
@@ -229,71 +346,31 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
 
     started_at = _iso()
 
-    skill = skills_repo.get(bot.skill_id) if bot.skill_id else None
-    system_prompt = skill.system_prompt if skill else ""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend(bot.conversation_history[-20:])
-    messages.append({"role": "user", "content": task_prompt})
-
-    import requests as _req
-
-    def mcp_executor(mcp_id: str, args: dict) -> dict:
-        try:
-            resp = _req.post(
-                f"{MCP_SERVICE_URL}/api/mcp/execute/{mcp_id}",
-                json=args,
-                timeout=30,
-            )
-            if resp.status_code == 200:
-                return resp.json()
-            return {"error": f"MCP service returned {resp.status_code}"}
-        except Exception as e:  # noqa: BLE001
-            return {"error": str(e)}
-
-    # Determine skill based on skill_id
-    agent_cls = None
-    system_prompt = ""
-    
-    if bot.skill_id == "demo":
-        # Use Demo System Skill from demo.py
-        from Skills.registry import skill_registry
-        agent_cls = skill_registry.get_skill("Demo System Skill")
-        if agent_cls:
-            system_prompt = agent_cls().system_prompt
-    elif bot.skill_id == "general":
-        # Use General/Skill base class
-        from Skills.app import SkillBase
-        system_prompt = SkillBase.system_prompt
-    else:
-        # A skill id may correspond to a discovered skill name rather than
-        # a saved skill. Resolve skills first so bot creators can pick an
-        # skill (e.g. "Burgundy Weather Skill") directly from the New-Bot form.
-        from Skills.registry import skill_registry
-
-        agent_cls = skill_registry.get_skill(bot.skill_id)
-        if agent_cls:
-            system_prompt = agent_cls().system_prompt
-        else:
-            skill = (
-                skills_repo.get(bot.skill_id)
-                if bot.skill_id
-                else None
-            )
-            if skill:
-                system_prompt = skill.system_prompt
+    agent_cls, system_prompt = _resolve_bot_skill(bot.skill_id)
+    mcp_executor, mcp_tools = _get_mcp_executor_and_tools(bot)
 
     result_text = ""
+    executed_skill = False
     if agent_cls:
-        skill = agent_cls()
-        agent_result = skill.execute(
-            task_prompt,
-            conversation_history=bot.conversation_history[-20:],
-            knowledge_path=bot.knowledge_base_path,
-            mcp_executor=mcp_executor,
-        )
-        result_text = agent_result.content
-    else:
+        try:
+            skill = agent_cls()
+            agent_result = skill.execute(
+                task_prompt,
+                conversation_history=bot.conversation_history[-20:],
+                knowledge_path=bot.knowledge_base_path,
+                mcp_executor=mcp_executor,
+                mcp_tools=mcp_tools,
+            )
+            if not agent_result.error:
+                result_text = agent_result.content
+                executed_skill = True
+        except Exception:
+            executed_skill = False
+
+    if not executed_skill:
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(bot.conversation_history[-20:])
+        messages.append({"role": "user", "content": task_prompt})
         llm_result = llm_router.chat(messages)
         result_text = llm_result.get("message", {}).get("content", "")
 

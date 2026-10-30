@@ -52,7 +52,7 @@
         </main>
     </div>
 
-    <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg" style="display:none">
+    <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,image/*,.png,.jpg,.jpeg,.gif,.webp" style="display:none">
 
     <!-- CREATE BOT MODAL -->
     <div id="newBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Create new bot">
@@ -324,13 +324,15 @@
                 </div>
 
                 <div class="sub-panel" id="mcps-marketplace">
-                    <p class="panel-intro">Servers you can add to give your bots new tools. Entries without a known endpoint open the Add Server form so you can finish setup.</p>
+                    <p class="panel-intro">Servers from the Official MCP Registry and Smithery. One-click install with automatic endpoint resolution; only asks for credentials when needed.</p>
                     <div class="search-box">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <input type="text" id="mcpMarketSearch" placeholder="Search MCP servers…" aria-label="Search MCP marketplace">
+                        <button type="button" class="btn-secondary small" id="mcpSyncBtn" title="Sync with Official Registry & Smithery"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Sync</button>
                     </div>
                     <div id="mcpMarketChips" class="chip-row"></div>
                     <div id="mcpMarketList" class="item-list"></div>
+                    <div id="mcpGrid" class="mcp-grid" hidden></div>
                     <div id="mcpMarketNote" class="llm-status"></div>
                 </div>
             </div>
@@ -372,16 +374,40 @@
                 </div>
 
                 <div class="sub-panel" id="skills-marketplace">
-                    <p class="panel-intro">Reusable instruction sets for specific tasks. <a id="skillMarketLink" href="#" target="_blank" rel="noopener" hidden>Browse more online <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></p>
+                    <p class="panel-intro">Reusable instruction sets synced from Smithery and public registry. <a id="skillMarketLink" href="#" target="_blank" rel="noopener" hidden>Browse more online <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a></p>
                     <div class="search-box">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <input type="text" id="skillMarketSearch" placeholder="Search skills…" aria-label="Search skills marketplace">
+                        <button type="button" class="btn-secondary small" id="skillSyncBtn" title="Sync with Smithery"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Sync</button>
                     </div>
                     <div id="skillMarketChips" class="chip-row"></div>
                     <div id="skillMarketList" class="item-list"></div>
+                    <div id="leaderboardSkillsGrid" class="skills-grid" hidden></div>
                     <div id="skillMarketNote" class="llm-status"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- MCP AUTH CREDENTIAL MODAL -->
+    <div id="mcpAuthModal" class="modal" role="dialog" aria-modal="true" aria-label="Enter MCP Credentials">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="mcpAuthModalTitle">Authentication Required</h3>
+                <button type="button" class="close-modal" aria-label="Close"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+            </div>
+            <p id="mcpAuthModalDesc" class="panel-intro">This MCP server requires credentials.</p>
+            <form id="mcpAuthForm">
+                <input type="hidden" id="mcpAuthServerId">
+                <div class="form-group">
+                    <label for="mcpAuthKey" id="mcpAuthKeyLabel">API Key or Token</label>
+                    <input type="password" id="mcpAuthKey" placeholder="Enter API key or token" autocomplete="off" required>
+                </div>
+                <div class="form-actions" style="display:flex;gap:10px;margin-top:16px;">
+                    <button type="submit" class="btn-save" id="mcpAuthSubmitBtn"><i class="fa-solid fa-download" aria-hidden="true"></i> Install Server</button>
+                    <button type="button" class="btn-secondary" id="mcpAuthCancelBtn">Cancel</button>
+                </div>
+            </form>
         </div>
     </div>
 

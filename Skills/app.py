@@ -59,6 +59,8 @@ class SkillBase:
         conversation_history: Optional[List[Dict[str, Any]]] = None,
         knowledge_path: Optional[str] = None,
         mcp_executor: Optional[Callable[[str, Dict[str, Any]], Dict[str, Any]]] = None,
+        mcp_tools: Optional[List[Dict[str, Any]]] = None,
+        images: Optional[List[str]] = None,
     ) -> SkillResult:
         """Run one turn of the skill: LLM call + optional tool execution."""
         messages: List[Dict[str, Any]] = [
@@ -66,9 +68,13 @@ class SkillBase:
         ]
         if conversation_history:
             messages.extend(conversation_history[-20:])
-        messages.append({"role": "user", "content": user_message})
+            
+        user_turn: Dict[str, Any] = {"role": "user", "content": user_message}
+        if images:
+            user_turn["images"] = images
+        messages.append(user_turn)
 
-        ollama_tools = self._build_tool_specs()
+        ollama_tools = self._build_tool_specs(mcp_tools=mcp_tools)
 
         try:
             response = ollama.chat(model=self.model, messages=messages, tools=ollama_tools or None)
@@ -156,7 +162,7 @@ class SkillBase:
     # Tool specs for Ollama
     # ════════════════════════════════════════════════════════════════
 
-    def _build_tool_specs(self) -> List[Dict[str, Any]]:
+    def _build_tool_specs(self, mcp_tools: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
         specs: List[Dict[str, Any]] = []
 
         for name, func in self._tool_registry.items():
@@ -192,6 +198,7 @@ class SkillBase:
                 }
             )
 
+        # Knowledge base tool
         specs.append(
             {
                 "type": "function",
@@ -208,6 +215,28 @@ class SkillBase:
                 },
             }
         )
+
+        # MCP tools
+        for mcp in (mcp_tools or []):
+            mcp_id = mcp.get("id") or mcp.get("name")
+            if not mcp_id:
+                continue
+            specs.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": f"mcp_{mcp_id}",
+                        "description": mcp.get("description") or f"MCP tool: {mcp.get('name', mcp_id)}",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "command": {"type": "string", "description": "Command or input parameter for the tool"},
+                                "query": {"type": "string", "description": "Query or parameter for the tool"},
+                            },
+                        },
+                    },
+                }
+            )
 
         return specs
 

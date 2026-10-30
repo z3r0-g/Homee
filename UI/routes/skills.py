@@ -6,6 +6,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 from ..models import skills_repo
+from ..registry_sync import sync_skills_registry
 
 skills_bp = Blueprint("skills", __name__)
 
@@ -67,17 +68,15 @@ def delete_skill(skill_id):
     return jsonify({"success": True})
 
 
-# ── Skill plugins: discovery, sync, leaderboard ──
+# ── Skill plugins: discovery, sync, marketplace ──
 
 
 from Skills.registry import skill_registry
 
 
-
 @skills_bp.route("/api/skills/import-git/<skill_id>", methods=["POST"])
 def import_skill_git(skill_id):
     """Import skill configuration from remote git source."""
-    import json
     from ..config import load_settings, save_settings
 
     settings = load_settings()
@@ -97,7 +96,6 @@ def import_skill_git(skill_id):
 @skills_bp.route("/api/skills/toggle/<skill_id>", methods=["POST"])
 def toggle_skill(skill_id):
     """Toggle skill active/inactive status."""
-    import json
     from ..config import load_settings, save_settings
 
     settings = load_settings()
@@ -106,8 +104,6 @@ def toggle_skill(skill_id):
     if skill_id in skills:
         skills[skill_id]["active"] = not skills[skill_id].get("active", True)
     else:
-        # Absent from settings means default-enabled, so the first toggle
-        # disables it (the old code created it as active: True — a no-op).
         skills[skill_id] = {"active": False, "name": skill_id}
 
     settings["skills"] = skills
@@ -120,11 +116,6 @@ def toggle_skill(skill_id):
 def active_skills():
     """Skills for the skills tab: every discovered skill, local and
     remote, with its id and enabled state.
-
-    Local skills are enabled by default; disabling one records
-    ``active: false`` in settings (see toggle_agent). Previously this
-    returned the bare registry rows — no id, no enabled flag — so the tab
-    rendered "undefined" and its buttons could not address an skill.
     """
     from ..config import load_settings
 
@@ -148,12 +139,7 @@ def list_discovered_skills():
 
 @skills_bp.route("/api/skills/available", methods=["GET"])
 def available_skills():
-    """Combined list of saved skills plus discovered skills.
-
-    Lets the New-Bot form offer *every* selectable skill in one place,
-    including locally-discovered skills like the Burgundy Weather Skill that are
-    not stored in the skills repository.
-    """
+    """Combined list of saved skills plus discovered skills."""
     from ..models import skills_repo
 
     skills_repo.load()
@@ -188,12 +174,7 @@ def list_sources():
 
 @skills_bp.route("/api/skills/refresh", methods=["POST"])
 def refresh_skills():
-    """Re-discover Skills, honouring the skills.git_url UI setting.
-
-    Also imports ``*.md`` skill files from the cloned repos (see
-    CONTRIBUTE.md): a repo may ship skill MD next to its skill
-    ``.py`` files, and syncing pulls those into the skills store.
-    """
+    """Re-discover Skills, honouring the skills.git_url UI setting."""
     from ..config import load_settings
     from Skills.registry import skill_registry
 
@@ -207,12 +188,7 @@ def refresh_skills():
 
 
 def _import_remote_skills() -> int:
-    """Import ``*.md`` skill files from cloned skill repos.
-
-    Each file is one skill; the id defaults to the file stem.
-    Re-syncing upserts by id, so updating a repo and syncing again
-    picks up edits. Repos ship ``.md`` only (no legacy JSON).
-    """
+    """Import ``*.md`` skill files from cloned skill repos."""
     from ..models import Skill, skills_repo
     from ..skill_md import parse_skill_md
     from Skills.registry import REMOTE_DIR
@@ -253,14 +229,26 @@ def _import_remote_skills() -> int:
 
 
 @skills_bp.route("/api/skills/leaderboard", methods=["GET"])
+@skills_bp.route("/api/skills/marketplace", methods=["GET"])
 def skills_leaderboard():
-    """Top Skills from the MCP Market leaderboard snapshot.
-    Discovery only: entries carry no repo URL, so cards link out
-    to the leaderboard instead of importing."""
-    from ..leaderboard import load_leaderboard
-    snap = load_leaderboard("skills")
+    """Skills marketplace synced with Smithery and public registry.
+    User can refresh via sync to retrieve latest community skills."""
+    refresh = request.args.get("refresh", "").lower() in ("1", "true", "yes")
+    snap = sync_skills_registry(force_remote=refresh)
     return jsonify({
         "skills": snap.get("entries", []),
-        "snapshot_date": snap.get("snapshot_date", ""),
-        "source_url": snap.get("source_url", ""),
+        "snapshot_date": snap.get("snapshot_date", "2026-10-30"),
+        "source_url": snap.get("source_url", "https://smithery.ai/skills"),
+        "source": snap.get("source", "Smithery & Public Skills Registry"),
+    })
+
+
+@skills_bp.route("/api/skills/sync", methods=["GET", "POST"])
+def skills_sync():
+    """Sync Skills marketplace from Smithery."""
+    snap = sync_skills_registry(force_remote=True)
+    return jsonify({
+        "success": True,
+        "count": snap.get("count", len(snap.get("entries", []))),
+        "source": snap.get("source", "Smithery & Public Skills Registry"),
     })

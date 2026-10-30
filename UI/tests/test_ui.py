@@ -262,7 +262,7 @@ def test_mcp_remote_merges_leaderboard_and_builtin(client, monkeypatch):
     assert "jsonplaceholder" not in ids  # retired curated catalog
     lb = [m for m in mcps if m["id"] == "lb-mcp-1"][0]
     assert lb["source"] == "Leaderboard" and lb["rank"] == 1
-    assert lb["endpoint"] == ""  # no endpoint: Use-this + View, no Import
+    assert lb["endpoint"]  # auto-resolved endpoint included
 
 
 def test_mcp_import_copies_remote_entry(client, monkeypatch):
@@ -273,12 +273,33 @@ def test_mcp_import_copies_remote_entry(client, monkeypatch):
     assert resp.get_json()["mcp"]["endpoint"] == "https://built.example"
 
 
-def test_mcp_import_rejects_leaderboard_entry(client, monkeypatch):
+def test_mcp_import_one_click_auto_resolves(client, monkeypatch):
     import UI.routes.mcps as mcps_routes
     monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
     resp = client.post("/api/mcp/import/lb-mcp-1")
-    assert resp.status_code == 400
-    assert "no endpoint" in resp.get_json()["error"]
+    assert resp.status_code == 200
+    assert resp.get_json()["mcp"]["endpoint"] == "https://mcp.run/reverse-engineer"
+
+
+def test_mcp_import_with_auth_credentials(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.post("/api/mcp/import/github", json={"auth_token": "ghp_test123"})
+    assert resp.status_code == 200
+    mcp = resp.get_json()["mcp"]
+    assert mcp["headers"]["Authorization"] == "Bearer ghp_test123"
+
+
+def test_mcp_sync_registry(client):
+    resp = client.post("/api/mcp/sync")
+    assert resp.status_code == 200
+    assert resp.get_json()["success"] is True
+
+
+def test_skills_sync_registry(client):
+    resp = client.post("/api/skills/sync")
+    assert resp.status_code == 200
+    assert resp.get_json()["success"] is True
 
 
 def test_mcp_remote_enriches_leaderboard_endpoint(client, monkeypatch):
