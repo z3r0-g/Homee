@@ -13,7 +13,7 @@ control of your data.
 - Apple Mac Mini A1347 Metal w/Ubuntu 22.04 LTS (or similar hardware / OS)
     - 8GB+ RAM (supports running CPU-only LLM models)
 - Ollama (local LLM backend)
-- Python 3.12+ with virtual environment (`venv`)
+- Python 3.13+ with virtual environment (`venv`)
 - Git (for remote skill plugins)
 - Node.js and npm (optional, for frontend assets)
 

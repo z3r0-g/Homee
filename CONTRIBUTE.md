@@ -99,7 +99,7 @@ To make your MCP server available in Homee:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/homee.git
+git clone https://github.com/z3r0/homee.git
 cd homee
 ```
 
