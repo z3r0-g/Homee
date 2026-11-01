@@ -1,7 +1,9 @@
 'use strict';
 
 const API_BASE = '';
-const MAX_ATTACH_CHARS = 100000;
+// PLAN.md 1.1: text files up to 1MB may be attached; the server truncates
+// the injected content to 12k chars.
+const MAX_ATTACH_FILE_SIZE = 1024 * 1024;
 
 const state = {
     bots: [],
@@ -14,6 +16,8 @@ const state = {
     models: { catalog: null, installed: [], primary: '', secondary: '', filter: 'all' },
     skills: { installed: [], market: [], marketMeta: {}, filter: 'all', marketLoaded: false },
     mcps: { installed: [], market: [], filter: 'all', marketLoaded: false },
+    availableSkills: [],
+    availableMcps: [],
 };
 
 const $ = (id) => document.getElementById(id);
@@ -48,6 +52,13 @@ function escapeHtml(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
+}
+
+function formatBytes(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 async function fetchJson(url, options) {
@@ -213,10 +224,20 @@ function setBotBusy(botId, busy) {
 
 function resolveSkillName(skillId) {
     if (!skillId) return 'none';
-    const select = $('newBotSkill');
-    const option = select && [...select.options].find(o => o.value === skillId);
-    if (option && option.text !== '(none)') return option.text;
+    const found = (state.availableSkills || []).find(s => s.id === skillId);
+    if (found) return found.name;
     return skillId.length > 20 ? skillId.substring(0, 8) : skillId;
+}
+
+function botSkillIds(bot) {
+    if (bot.skill_ids && bot.skill_ids.length) return bot.skill_ids;
+    return bot.skill_id ? [bot.skill_id] : [];
+}
+
+function resolveSkillNames(bot) {
+    const ids = botSkillIds(bot);
+    if (!ids.length) return 'none';
+    return ids.map(resolveSkillName).join(' + ');
 }
 
 function scheduleLabel(cfg) {
@@ -293,7 +314,7 @@ function reenableComposer() {
     const send = composer.querySelector('.btn-save');
     if (send) send.disabled = false;
     const runBtn = $('runTaskBtn');
-    if (runBtn) runBtn.disabled = false;
+    if (runBtn && !runBtn.dataset.noTask) runBtn.disabled = false;
     const input = $('userMessage');
     if (input) input.disabled = false;
 }
@@ -362,7 +383,7 @@ async function openBotChat(botId) {
     ).join(' ');
     const lastRun = cfg.last_run ? new Date(cfg.last_run).toLocaleString() : 'never';
     infoDiv.innerHTML = `
-        <span class="bot-meta">Skill: ${escapeHtml(resolveSkillName(bot.skill_id))} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(lastRun)} · Runs: ${cfg.run_count || 0}</span>
+        <span class="bot-meta">Skills: ${escapeHtml(resolveSkillNames(bot))} · MCPs: ${(bot.mcps || []).length} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(lastRun)} · Runs: ${cfg.run_count || 0}</span>
         <div class="bot-health-small" id="botHealth"></div>
         <div class="bot-actions">${actionsHtml}</div>`;
     chatArea.appendChild(infoDiv);
@@ -383,6 +404,7 @@ async function openBotChat(botId) {
             <button type="button" data-model-choice="smart" class="${state.chatModel === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled title="Set a secondary model in Settings to enable Smart"'}>Smart</button>
         </div>` : '';
 
+    const hasTask = !!String(cfg.task_prompt || '').trim();
     const composer = document.createElement('div');
     composer.className = 'chat-composer';
     composer.innerHTML = `
@@ -390,7 +412,7 @@ async function openBotChat(botId) {
         ${switchHtml}
         <button type="button" class="btn-secondary small" id="attachFileBtn" title="Attach a text file" aria-label="Attach a file"><i class="fa-solid fa-paperclip" aria-hidden="true"></i></button>
         <button type="button" class="btn-save"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send</button>
-        <button type="button" id="runTaskBtn" class="btn-run-task"><i class="fa-solid fa-play" aria-hidden="true"></i> Run Task</button>`;
+        <button type="button" id="runTaskBtn" class="btn-run-task"${hasTask ? '' : ' data-no-task="1" disabled title="Set a task prompt in Edit Bot to enable scheduled runs — adhoc chat is always available"'}><i class="fa-solid fa-play" aria-hidden="true"></i> Run Task</button>`;
     chatArea.appendChild(composer);
 
     const input = $('userMessage');
@@ -466,6 +488,11 @@ async function sendMessageText(botId, message, input) {
     if (model) body.model = model;
 
     const { ok, status, data } = await postJson(`/api/bots/${encodeURIComponent(botId)}/chat`, body);
+    if (ok && !data.error && state.attachedFile) {
+        // Attachments live only for the message they were sent with.
+        state.attachedFile = null;
+        renderAttachedChip();
+    }
     if (thinkingDiv.isConnected) {
         const content = thinkingDiv.querySelector('.message-content');
         if (!ok || data.error) {
@@ -543,18 +570,107 @@ chatArea.addEventListener('click', (e) => {
     }
 });
 
-async function loadSkillsForNewBot() {
-    const select = $('newBotSkill');
-    const editSelect = $('editBotSkill');
-    const { ok, data } = await fetchJson('/api/skills/available');
-    const skills = ok ? (data.skills || []) : [
-        { id: 'demo', name: 'Demo Mode' },
-        { id: 'general', name: 'General' },
-    ];
-    const html = '<option value="">(none)</option>' +
-        skills.map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`).join('');
-    if (select) select.innerHTML = html;
-    if (editSelect) editSelect.innerHTML = html;
+/* ── Bot form pickers: multi-skill + multi-MCP, marketplace-style ── */
+
+function createBotPicker(containerId) {
+    const el = $(containerId);
+    if (!el) return null;
+    let items = [];
+    let selected = [];
+    let query = '';
+
+    function renderChips() {
+        const chipsEl = el.querySelector('.picker-chips');
+        chipsEl.innerHTML = selected.length ? selected.map(id => {
+            const item = items.find(i => i.id === id);
+            const label = item ? item.name : id;
+            return `<span class="picker-chip">${escapeHtml(label)}<button type="button" class="picker-chip-x" data-picker-remove="${escapeHtml(id)}" aria-label="Remove ${escapeHtml(label)}"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></span>`;
+        }).join('') : '<span class="picker-empty">None selected</span>';
+    }
+
+    function renderList() {
+        const listEl = el.querySelector('.picker-list');
+        const selSet = new Set(selected);
+        const shown = items.filter(i => !query || `${i.name} ${i.description || ''}`.toLowerCase().includes(query));
+        listEl.innerHTML = shown.length ? shown.map(item => {
+            const isSel = selSet.has(item.id);
+            const label = isSel ? 'Remove' : 'Add';
+            return `
+            <article class="market-item picker-item${isSel ? ' is-selected' : ''}">
+                <div class="market-item-body">
+                    <h4 class="market-item-title">${escapeHtml(item.name)}</h4>
+                    <p class="market-item-desc">${escapeHtml(item.description || '')}</p>
+                </div>
+                <div class="item-actions">
+                    <button type="button" class="icon-action${isSel ? ' done' : ''}" data-picker-toggle="${escapeHtml(item.id)}" title="${label}" aria-label="${label} ${escapeHtml(item.name)}"><i class="fa-solid ${isSel ? 'fa-xmark' : 'fa-plus'}" aria-hidden="true"></i></button>
+                </div>
+            </article>`;
+        }).join('') : '<p class="list-empty">Nothing available.</p>';
+    }
+
+    el.innerHTML = `
+        <div class="picker-chips"></div>
+        <div class="search-box picker-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="text" class="picker-filter" placeholder="Filter…" aria-label="Filter options"></div>
+        <div class="picker-list"></div>`;
+
+    el.addEventListener('click', (e) => {
+        const toggle = e.target.closest('[data-picker-toggle]');
+        if (toggle) {
+            const id = toggle.dataset.pickerToggle;
+            selected = selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id];
+            renderChips();
+            renderList();
+            return;
+        }
+        const remove = e.target.closest('[data-picker-remove]');
+        if (remove) {
+            selected = selected.filter(s => s !== remove.dataset.pickerRemove);
+            renderChips();
+            renderList();
+        }
+    });
+    el.querySelector('.picker-filter').addEventListener('input', (e) => {
+        query = e.target.value.trim().toLowerCase();
+        renderList();
+    });
+
+    renderChips();
+    renderList();
+
+    return {
+        setItems(next) { items = next || []; renderChips(); renderList(); },
+        setSelected(ids) { selected = (ids || []).filter(Boolean); renderChips(); renderList(); },
+        getSelected() { return [...selected]; },
+    };
+}
+
+const botFormPickers = {
+    newSkills: null,
+    newMcps: null,
+    editSkills: null,
+    editMcps: null,
+};
+
+function initBotFormPickers() {
+    botFormPickers.newSkills = createBotPicker('newBotSkillsPicker');
+    botFormPickers.newMcps = createBotPicker('newBotMcpsPicker');
+    botFormPickers.editSkills = createBotPicker('editBotSkillsPicker');
+    botFormPickers.editMcps = createBotPicker('editBotMcpsPicker');
+}
+
+async function loadBotFormOptions() {
+    const [skillsRes, mcpsRes] = await Promise.all([
+        fetchJson('/api/skills/available'),
+        fetchJson('/api/mcp/local'),
+    ]);
+    state.availableSkills = skillsRes.ok ? (skillsRes.data.skills || []) : [];
+    state.availableMcps = mcpsRes.ok ? (mcpsRes.data.mcps || []) : [];
+    const skillItems = state.availableSkills.map(s => ({ id: s.id, name: s.name, description: s.description || '' }));
+    const mcpItems = state.availableMcps.map(m => ({ id: m.id, name: m.name || m.id, description: m.description || '' }));
+    botFormPickers.newSkills?.setItems(skillItems);
+    botFormPickers.editSkills?.setItems(skillItems);
+    botFormPickers.newMcps?.setItems(mcpItems);
+    botFormPickers.editMcps?.setItems(mcpItems);
 }
 
 function toggleEditScheduleGroups(schedule) {
@@ -568,11 +684,12 @@ async function openEditBot(botId) {
         toast('Could not load the bot for editing.', 'error');
         return;
     }
-    await loadSkillsForNewBot();
+    await loadBotFormOptions();
     const cfg = bot.config || {};
     $('editBotId').value = bot.id;
     $('editBotName').value = bot.name || '';
-    $('editBotSkill').value = bot.skill_id || '';
+    botFormPickers.editSkills?.setSelected(botSkillIds(bot));
+    botFormPickers.editMcps?.setSelected(bot.mcps || []);
     $('editBotTaskPrompt').value = cfg.task_prompt || '';
     const schedule = cfg.schedule_type || 'none';
     $('editBotSchedule').value = schedule;
@@ -593,7 +710,8 @@ $('editBotForm')?.addEventListener('submit', async (e) => {
     const statusEl = $('editBotStatus');
     const { ok } = await sendJson('PUT', `/api/bots/${encodeURIComponent(botId)}`, {
         name: $('editBotName').value,
-        skill_id: $('editBotSkill').value || '',
+        skill_ids: botFormPickers.editSkills ? botFormPickers.editSkills.getSelected() : [],
+        mcps: botFormPickers.editMcps ? botFormPickers.editMcps.getSelected() : [],
         task_prompt: $('editBotTaskPrompt').value,
         schedule_type: schedule,
         interval_seconds: schedule === 'interval' ? parseInt($('editBotInterval').value, 10) || 3600 : 0,
@@ -613,6 +731,8 @@ newBotBtn?.addEventListener('click', () => {
     toggleSidebar(false);
     $('newBotForm').reset();
     $('scheduleOptions').style.display = 'none';
+    botFormPickers.newSkills?.setSelected([]);
+    botFormPickers.newMcps?.setSelected([]);
     openModal(newBotModal);
 });
 
@@ -625,7 +745,8 @@ $('newBotForm')?.addEventListener('submit', async (e) => {
     const scheduleType = $('newBotSchedule').value;
     const { ok, data } = await postJson('/api/bots', {
         name: $('newBotName').value,
-        skill_id: $('newBotSkill').value || '',
+        skill_ids: botFormPickers.newSkills ? botFormPickers.newSkills.getSelected() : [],
+        mcps: botFormPickers.newMcps ? botFormPickers.newMcps.getSelected() : [],
         task_prompt: $('newBotTaskPrompt').value,
         schedule_type: scheduleType,
         interval_seconds: scheduleType === 'interval' ? parseInt($('newBotInterval').value, 10) || 3600 : 0,
@@ -669,7 +790,7 @@ function renderAttachedChip() {
     const icon = isImg
         ? `<img src="${file.content}" class="attached-image-thumb" alt="${escapeHtml(file.name)}">`
         : '<i class="fa-solid fa-file-lines" aria-hidden="true"></i>';
-    const detail = isImg ? 'image' : `${file.content.length.toLocaleString()} chars`;
+    const detail = formatBytes(file.size || file.content.length);
     bar.innerHTML = `
         ${icon}
         <span>Attached: ${escapeHtml(file.name)} (${detail})</span>
@@ -700,6 +821,7 @@ $('fileAttachInput')?.addEventListener('change', (e) => {
             state.attachedFile = {
                 name: file.name,
                 type: 'image',
+                size: file.size,
                 content: String(reader.result || ''),
             };
             renderAttachedChip();
@@ -709,8 +831,8 @@ $('fileAttachInput')?.addEventListener('change', (e) => {
         return;
     }
 
-    if (file.size > MAX_ATTACH_CHARS) {
-        toast('That file is too large to attach (100,000 character limit).', 'error');
+    if (file.size > MAX_ATTACH_FILE_SIZE) {
+        toast('That file is too large to attach (1 MB limit).', 'error');
         return;
     }
     const reader = new FileReader();
@@ -720,7 +842,7 @@ $('fileAttachInput')?.addEventListener('change', (e) => {
             toast('Only text files and images can be attached.', 'error');
             return;
         }
-        state.attachedFile = { name: file.name, type: 'text', content: text.slice(0, MAX_ATTACH_CHARS) };
+        state.attachedFile = { name: file.name, type: 'text', size: file.size, content: text };
         renderAttachedChip();
     };
     reader.onerror = () => toast('Could not read that file.', 'error');
@@ -736,7 +858,7 @@ async function runChatSearch() {
         chatSearchResults.innerHTML = '';
         return;
     }
-    const { ok, data } = await fetchJson(`/api/bots/search?q=${encodeURIComponent(query)}`);
+    const { ok, data } = await fetchJson(`/api/search?q=${encodeURIComponent(query)}`);
     if (!ok) {
         chatSearchResults.innerHTML = '<p class="search-empty">Search failed.</p>';
         return;
@@ -754,13 +876,36 @@ async function runChatSearch() {
         </div>`).join('');
 }
 
-function openSearchResult(el) {
+async function openSearchResult(el) {
+    const query = chatSearchInput.value.trim();
+    const botId = el.dataset.botId;
     chatSearchInput.value = '';
     chatSearchResults.innerHTML = '';
-    openBotChat(el.dataset.botId);
+    openBotChat(botId);
+    if (!query) return;
+    if (!scrollToMatch(query)) {
+        // The match may be older than the 20-message window — load the full log.
+        const { ok, data } = await fetchJson(`/api/bots/${encodeURIComponent(botId)}/history`);
+        if (ok && Array.isArray(data.history) && $('chatHistory')) {
+            renderChatHistory(data.history, $('chatHistory'));
+            scrollToMatch(query);
+        }
+    }
 }
 
-chatSearchInput?.addEventListener('input', debounce(runChatSearch, 250));
+function scrollToMatch(query) {
+    const historyDiv = $('chatHistory');
+    if (!historyDiv) return false;
+    const needle = query.toLowerCase();
+    const match = [...historyDiv.querySelectorAll('.message')].find(m =>
+        (m.textContent || '').toLowerCase().includes(needle));
+    if (!match) return false;
+    match.classList.add('search-hit');
+    match.scrollIntoView({ block: 'center' });
+    return true;
+}
+
+chatSearchInput?.addEventListener('input', debounce(runChatSearch, 200));
 chatSearchInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         chatSearchInput.value = '';
@@ -1526,7 +1671,7 @@ async function installMarketSkill(item, btn) {
             description: item.description || '',
             skills: [],
             abilities: [],
-            system_prompt: '',
+            system_prompt: `You are ${item.name}. ${item.description || ''}`.trim(),
         });
         if (!ok) {
             toast(`Install failed: ${data.error || 'server error'}`, 'error');
@@ -1534,7 +1679,7 @@ async function installMarketSkill(item, btn) {
         }
         toast(`'${item.name}' installed.`, 'success');
         await loadInstalledSkills();
-        await loadSkillsForNewBot();
+        await loadBotFormOptions();
     });
 }
 
@@ -1556,7 +1701,7 @@ $('skillList')?.addEventListener('click', async (e) => {
             ? await postJson(`/api/env/disable/${encodeURIComponent(id)}`)
             : await fetchJson(`/api/skills/${encodeURIComponent(id)}`, { method: 'DELETE' });
         if (!result.ok) toast(result.data.error || 'Could not remove the skill.', 'error');
-        else await loadSkillsForNewBot();
+        else await loadBotFormOptions();
     }
     await loadInstalledSkills();
 });
@@ -1583,7 +1728,7 @@ $('skillForm')?.addEventListener('submit', async (e) => {
     closeModal(skillModal);
     toast('Skill saved.', 'success');
     await loadInstalledSkills();
-    await loadSkillsForNewBot();
+    await loadBotFormOptions();
 });
 
 $('skillsSyncToggleBtn')?.addEventListener('click', () => {
@@ -1607,7 +1752,7 @@ $('skillsSyncBtn')?.addEventListener('click', async () => {
     }
     setStatus(statusEl, `Synced — ${(synced.data.skills || []).length} skill(s) discovered.`, true);
     await loadInstalledSkills();
-    await loadSkillsForNewBot();
+    await loadBotFormOptions();
 });
 
 /* ── MCP servers ─────────────────────────────────────────────────── */
@@ -1873,7 +2018,8 @@ window.addEventListener('resize', debounce(() => {
 /* ── Init ────────────────────────────────────────────────────────── */
 
 async function init() {
-    await Promise.all([loadBots(), loadSkillsForNewBot(), loadSettings()]);
+    initBotFormPickers();
+    await Promise.all([loadBots(), loadBotFormOptions(), loadSettings()]);
     renderModeSelector();
     loadInstalledSkills();
     loadInstalledMcps();

@@ -38,6 +38,8 @@ class SkillBase:
     system_prompt: str = "You are a helpful assistant."
     model: str = SKILL_MODEL
     tools: List[Callable[..., Any]] = []
+    # Default for the base class itself; __init_subclass__ rebuilds it per subclass.
+    _tool_registry: Dict[str, Callable[..., Any]] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -68,7 +70,14 @@ class SkillBase:
         ]
         if conversation_history:
             messages.extend(conversation_history[-20:])
-            
+
+        # MCP dispatch gate: when the caller passes a tool list (the bot routes
+        # always do), only those MCPs may be invoked — even if the model asks
+        # for one that was never advertised. ``None`` means unrestricted
+        # (direct/REPL skill usage).
+        self._active_mcp_ids: Optional[set] = None
+        if mcp_tools is not None:
+            self._active_mcp_ids = {m.get("id") or m.get("name") for m in mcp_tools}
         user_turn: Dict[str, Any] = {"role": "user", "content": user_message}
         if images:
             user_turn["images"] = images
@@ -132,6 +141,9 @@ class SkillBase:
 
         if func_name.startswith("mcp_"):
             mcp_id = func_name[len("mcp_"):]
+            allowed = getattr(self, "_active_mcp_ids", None)
+            if allowed is not None and mcp_id not in allowed:
+                return f"MCP {mcp_id} is not available to this bot"
             if mcp_executor:
                 try:
                     result = mcp_executor(mcp_id, func_args)

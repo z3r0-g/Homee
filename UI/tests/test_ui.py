@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from UI.app import create_ui_app
 
 
@@ -436,15 +438,22 @@ def test_update_bot_via_put(client):
 
 
 def test_chat_passes_model_override(client, monkeypatch):
+    import ollama
+
     import UI.routes.bots as bots_routes
+    from Skills.app import SKILL_MODEL
 
     seen = {}
 
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        seen["model"] = model
+        return SimpleNamespace(message=SimpleNamespace(content="hello", tool_calls=[]))
+
     class _StubRouter:
         def chat(self, messages, model=None):
-            seen["model"] = model
-            return {"message": {"content": "hello"}}
+            raise AssertionError("fallback router must not be used when the skill path works")
 
+    monkeypatch.setattr(ollama, "chat", _chat)
     monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
     resp = client.post("/api/bots", json={"name": "Chat Bot", "enabled": True})
     bot_id = resp.get_json()["bot"]["id"]
@@ -454,23 +463,22 @@ def test_chat_passes_model_override(client, monkeypatch):
     )
     assert resp.status_code == 200
     assert seen["model"] == "qwen2.5:3b"
-    # No model field -> router default (Fast), not an override.
+    # No model field -> skill default (Fast), not an override.
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hi"})
     assert resp.status_code == 200
-    assert seen["model"] is None
+    assert seen["model"] == SKILL_MODEL
 
 
 def test_chat_attachment_context_not_persisted(client, monkeypatch):
-    import UI.routes.bots as bots_routes
+    import ollama
 
     seen = {}
 
-    class _StubRouter:
-        def chat(self, messages, model=None):
-            seen["messages"] = messages
-            return {"message": {"content": "based on the file"}}
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        seen["messages"] = messages
+        return SimpleNamespace(message=SimpleNamespace(content="based on the file", tool_calls=[]))
 
-    monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
+    monkeypatch.setattr(ollama, "chat", _chat)
     resp = client.post("/api/bots", json={"name": "File Bot", "enabled": True})
     bot_id = resp.get_json()["bot"]["id"]
     resp = client.post(f"/api/bots/{bot_id}/chat", json={
@@ -478,9 +486,10 @@ def test_chat_attachment_context_not_persisted(client, monkeypatch):
         "attachments": [{"name": "notes.txt", "content": "the garden needs water"}],
     })
     assert resp.status_code == 200
-    systems = [m for m in seen["messages"] if m["role"] == "system"]
-    assert any("notes.txt" in m["content"] and "the garden needs water" in m["content"]
-               for m in systems)
+    # The file is injected into the user turn in the PLAN.md 1.1 format.
+    user_turns = [m for m in seen["messages"] if m["role"] == "user"]
+    assert any("[User attached file: notes.txt" in m["content"]
+               and "the garden needs water" in m["content"] for m in user_turns)
     # Attachment context must not land in persisted history.
     history = client.get(f"/api/bots/{bot_id}").get_json()["conversation_history"]
     assert len(history) == 2
@@ -488,13 +497,13 @@ def test_chat_attachment_context_not_persisted(client, monkeypatch):
 
 
 def test_search_across_chats(client, monkeypatch):
-    import UI.routes.bots as bots_routes
+    import ollama
 
-    class _StubRouter:
-        def chat(self, messages, model=None):
-            return {"message": {"content": "ok"}}
-
-    monkeypatch.setattr(bots_routes, "llm_router", _StubRouter())
+    monkeypatch.setattr(
+        ollama, "chat",
+        lambda **kwargs: SimpleNamespace(
+            message=SimpleNamespace(content="ok", tool_calls=[])),
+    )
     resp = client.post("/api/bots", json={"name": "Garden Bot", "enabled": True})
     bot_id = resp.get_json()["bot"]["id"]
     client.post(f"/api/bots/{bot_id}/chat", json={"message": "how is my garden doing?"})

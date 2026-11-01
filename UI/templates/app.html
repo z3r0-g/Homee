@@ -52,7 +52,7 @@
         </main>
     </div>
 
-    <input type="file" id="fileAttachInput" accept="text/*,.txt,.md,.json,.csv,.log,.py,.js,.ts,.html,.css,.xml,.yaml,.yml,.toml,.ini,.cfg,image/*,.png,.jpg,.jpeg,.gif,.webp" style="display:none">
+    <input type="file" id="fileAttachInput" accept=".txt,.md,.json,.py,.log,image/*,.png,.jpg,.jpeg,.gif,.webp" style="display:none">
 
     <!-- CREATE BOT MODAL -->
     <div id="newBotModal" class="modal" role="dialog" aria-modal="true" aria-label="Create new bot">
@@ -67,13 +67,15 @@
                     <input type="text" id="newBotName" placeholder="Research Bot" required>
                 </div>
                 <div class="form-group">
-                    <label>Skill</label>
-                    <select id="newBotSkill">
-                        <option value="">(none)</option>
-                    </select>
+                    <label>Skills <span class="label-hint">— combine as many as you like</span></label>
+                    <div class="picker" id="newBotSkillsPicker"></div>
                 </div>
                 <div class="form-group">
-                    <label>Task Prompt</label>
+                    <label>MCP Servers <span class="label-hint">— tools this bot may call</span></label>
+                    <div class="picker" id="newBotMcpsPicker"></div>
+                </div>
+                <div class="form-group">
+                    <label>Task Prompt <span class="label-hint">— scheduled task; chat is always available</span></label>
                     <textarea id="newBotTaskPrompt" rows="3"></textarea>
                 </div>
                 <div class="form-group">
@@ -112,13 +114,15 @@
                     <input type="text" id="editBotName" required>
                 </div>
                 <div class="form-group">
-                    <label>Skill</label>
-                    <select id="editBotSkill">
-                        <option value="">(none)</option>
-                    </select>
+                    <label>Skills <span class="label-hint">— combine as many as you like</span></label>
+                    <div class="picker" id="editBotSkillsPicker"></div>
                 </div>
                 <div class="form-group">
-                    <label>Task Prompt</label>
+                    <label>MCP Servers <span class="label-hint">— tools this bot may call</span></label>
+                    <div class="picker" id="editBotMcpsPicker"></div>
+                </div>
+                <div class="form-group">
+                    <label>Task Prompt <span class="label-hint">— scheduled task; chat is always available</span></label>
                     <textarea id="editBotTaskPrompt" rows="3"></textarea>
                 </div>
                 <div class="form-group">

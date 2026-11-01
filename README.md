@@ -17,6 +17,14 @@ control of your data.
 - Git (for remote skill plugins)
 - Node.js and npm (optional, for frontend assets)
 
+## Features
+
+- **Bots with assigned Skills** — every bot replies through its assigned skill(s): combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
+- **Ask About a File** — ✅ Available. Paperclip in the composer attaches a text file (`.txt,.md,.json,.py,.log`, <1MB); it is injected into the prompt (truncated to 12k chars) and never written to disk.
+- **Search Across Chats** — ✅ Available. Sidebar search box scans every bot's full chat history (`UI/instances/bots/*/history.jsonl`), debounced, and opens the bot scrolled to the match.
+- **MCP Marketplace** — one-click install from the Official MCP Registry & Smithery; assign MCPs per bot.
+- **Local-first LLM** — Ollama-first with remote fallback, RAM-aware model catalog.
+
 ## Architecture
 
 > The platform is organized into two Flask services, each using the **App Factory pattern** (`create_app()` factory), running on separate ports.
@@ -60,11 +68,14 @@ control of your data.
 Homee features a comprehensive unit, integration, and Playwright end-to-end test suite:
 
 ```bash
-# Run entire test suite (91 tests)
+# Run entire test suite (159 tests)
 pytest
 
 # Run Playwright E2E browser tests
 pytest test_homee_e2e.py
+
+# Skill contract + utility suites (PLAN.md Ch 12)
+pytest Skills/tests/
 ```
 
 ## Quick Start (Install Everything)

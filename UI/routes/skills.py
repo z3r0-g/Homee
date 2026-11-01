@@ -25,13 +25,19 @@ def create_skill():
     skill_id = str(uuid.uuid4())
     from ..models import Skill
 
+    name = data.get("name", "New Skill")
+    description = data.get("description", "")
+    # Marketplace installs arrive without a prompt — synthesize instructions
+    # from the listing so the skill actually shapes bot behavior.
+    system_prompt = data.get("system_prompt") or f"You are {name}. {description}".strip()
+
     skill = Skill(
         id=skill_id,
-        name=data.get("name", "New Skill"),
-        description=data.get("description", ""),
+        name=name,
+        description=description,
         skills=data.get("skills", []),
         abilities=data.get("abilities", []),
-        system_prompt=data.get("system_prompt", ""),
+        system_prompt=system_prompt,
     )
     skills_repo.add(skill)
     return jsonify({"success": True, "skill": skill.to_dict()}), 201

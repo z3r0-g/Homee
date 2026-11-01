@@ -13,6 +13,10 @@ from UI.models import bots_repo, skills_repo, mcps_repo
 
 def _reset_state() -> None:
     """Clear in-memory repo state and persisted files for test isolation."""
+    import shutil
+
+    from UI.config import BOTS_DIR
+
     bots_repo._bots.clear()
     skills_repo._skills.clear()
     mcps_repo._mcps.clear()
@@ -25,6 +29,11 @@ def _reset_state() -> None:
             path.unlink(missing_ok=True)
         except OSError:
             pass
+    # Per-bot append-only history logs (UI/instances/bots/<id>/history.jsonl)
+    if BOTS_DIR.exists():
+        for child in BOTS_DIR.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
     d = skills_repo._dir
     if d.exists():
         for f in d.glob("*.md"):

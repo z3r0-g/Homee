@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "id": "fetch",
+    "name": "Fetch",
+    "description": "Fetch web pages and API responses directly into agent context.",
+    "endpoint": "https://mcp.run/fetch",
+    "method": "GET",
+    "auth_type": "none",
+    "headers": {},
+    "created_at": 1793565707.0994306
+  },
+  {
+    "id": "weather",
+    "name": "Weather Service",
+    "description": "Real-time weather reports and forecasts worldwide.",
+    "endpoint": "https://api.open-meteo.com/v1/forecast",
+    "method": "GET",
+    "auth_type": "none",
+    "headers": {},
+    "created_at": 1793565711.9027274
+  }
+]

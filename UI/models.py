@@ -95,11 +95,12 @@ class BotConfig:
 
 @dataclass
 class Bot:
-    """Skill bot instance — embodies a Skill to accomplish tasks."""
+    """Skill bot instance — embodies one or more Skills to accomplish tasks."""
 
     id: str
     name: str
-    skill_id: str = ""
+    skill_id: str = ""  # legacy single-skill field; kept in sync with skill_ids[0]
+    skill_ids: List[str] = field(default_factory=list)
     status: str = "idle"
     created_at: str = field(default_factory=_iso)
     updated_at: str = field(default_factory=_iso)
@@ -108,18 +109,37 @@ class Bot:
     mcps: List[str] = field(default_factory=list)
     config: BotConfig = field(default_factory=BotConfig)
 
+    def skill_id_list(self) -> List[str]:
+        """All assigned skill ids (multi-skill bots), migrating the legacy
+        single ``skill_id`` field when needed."""
+        if self.skill_ids:
+            return list(self.skill_ids)
+        return [self.skill_id] if self.skill_id else []
+
+    def set_skills(self, skill_ids: List[str]) -> None:
+        """Assign skills; keeps the legacy ``skill_id`` field pointing at the
+        primary (first) skill so older readers keep working."""
+        self.skill_ids = [str(s) for s in skill_ids if s]
+        self.skill_id = self.skill_ids[0] if self.skill_ids else ""
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
+        d["skill_ids"] = self.skill_id_list()
+        d["skill_id"] = d["skill_ids"][0] if d["skill_ids"] else ""
         d["config"] = self.config.to_dict()
         return d
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Bot":
         cfg = d.pop("config", {})
-        return cls(
+        bot = cls(
             **{k: v for k, v in d.items() if k in cls.__dataclass_fields__},
             config=BotConfig.from_dict(cfg) if isinstance(cfg, dict) else BotConfig(),
         )
+        # Migrate legacy bots saved before multi-skill support.
+        if not bot.skill_ids and bot.skill_id:
+            bot.skill_ids = [bot.skill_id]
+        return bot
 
     def knowledge_path(self) -> Path:
         if self.knowledge_base_path:
