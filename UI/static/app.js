@@ -578,6 +578,8 @@ function createBotPicker(containerId) {
     let items = [];
     let selected = [];
     let query = '';
+    let emptyMsg = 'Nothing available.';
+    let loading = false;
 
     function renderChips() {
         const chipsEl = el.querySelector('.picker-chips');
@@ -590,6 +592,10 @@ function createBotPicker(containerId) {
 
     function renderList() {
         const listEl = el.querySelector('.picker-list');
+        if (loading) {
+            listEl.innerHTML = '<p class="list-empty"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading…</p>';
+            return;
+        }
         const selSet = new Set(selected);
         const shown = items.filter(i => !query || `${i.name} ${i.description || ''}`.toLowerCase().includes(query));
         listEl.innerHTML = shown.length ? shown.map(item => {
@@ -605,7 +611,7 @@ function createBotPicker(containerId) {
                     <button type="button" class="icon-action${isSel ? ' done' : ''}" data-picker-toggle="${escapeHtml(item.id)}" title="${label}" aria-label="${label} ${escapeHtml(item.name)}"><i class="fa-solid ${isSel ? 'fa-xmark' : 'fa-plus'}" aria-hidden="true"></i></button>
                 </div>
             </article>`;
-        }).join('') : '<p class="list-empty">Nothing available.</p>';
+        }).join('') : `<p class="list-empty">${escapeHtml(items.length ? 'No matches.' : emptyMsg)}</p>`;
     }
 
     el.innerHTML = `
@@ -638,9 +644,11 @@ function createBotPicker(containerId) {
     renderList();
 
     return {
-        setItems(next) { items = next || []; renderChips(); renderList(); },
+        setItems(next) { items = next || []; loading = false; renderChips(); renderList(); },
         setSelected(ids) { selected = (ids || []).filter(Boolean); renderChips(); renderList(); },
         getSelected() { return [...selected]; },
+        setLoading() { loading = true; renderList(); },
+        setEmptyMessage(msg) { emptyMsg = msg; if (!items.length) renderList(); },
     };
 }
 
@@ -659,6 +667,10 @@ function initBotFormPickers() {
 }
 
 async function loadBotFormOptions() {
+    const skillPickers = [botFormPickers.newSkills, botFormPickers.editSkills].filter(Boolean);
+    const mcpPickers = [botFormPickers.newMcps, botFormPickers.editMcps].filter(Boolean);
+    [...skillPickers, ...mcpPickers].forEach(p => p.setLoading());
+
     const [skillsRes, mcpsRes] = await Promise.all([
         fetchJson('/api/skills/available'),
         fetchJson('/api/mcp/local'),
@@ -667,10 +679,19 @@ async function loadBotFormOptions() {
     state.availableMcps = mcpsRes.ok ? (mcpsRes.data.mcps || []) : [];
     const skillItems = state.availableSkills.map(s => ({ id: s.id, name: s.name, description: s.description || '' }));
     const mcpItems = state.availableMcps.map(m => ({ id: m.id, name: m.name || m.id, description: m.description || '' }));
-    botFormPickers.newSkills?.setItems(skillItems);
-    botFormPickers.editSkills?.setItems(skillItems);
-    botFormPickers.newMcps?.setItems(mcpItems);
-    botFormPickers.editMcps?.setItems(mcpItems);
+
+    skillPickers.forEach(p => {
+        p.setEmptyMessage(skillsRes.ok
+            ? 'No skills available — install some in Settings → Skills.'
+            : 'Could not load skills.');
+        p.setItems(skillItems);
+    });
+    mcpPickers.forEach(p => {
+        p.setEmptyMessage(mcpsRes.ok
+            ? 'No MCP servers installed yet — add some in Settings → MCPs.'
+            : 'MCP service unavailable — start it, then reopen this dialog.');
+        p.setItems(mcpItems);
+    });
 }
 
 function toggleEditScheduleGroups(schedule) {
@@ -734,6 +755,9 @@ newBotBtn?.addEventListener('click', () => {
     botFormPickers.newSkills?.setSelected([]);
     botFormPickers.newMcps?.setSelected([]);
     openModal(newBotModal);
+    // Refresh options on every open so MCPs/skills installed after page load
+    // (or a slow-starting MCP service) show up without a page refresh.
+    loadBotFormOptions();
 });
 
 $('newBotSchedule')?.addEventListener('change', (e) => {
@@ -1896,6 +1920,7 @@ async function installMarketMcp(item, btn) {
         toast(`'${item.name}' added to your MCP servers (one-click install).`, 'success');
         await loadInstalledMcps();
         loadMcpStatus();
+        loadBotFormOptions();
     });
 }
 
@@ -1918,6 +1943,7 @@ $('mcpList')?.addEventListener('click', async (e) => {
     if (!result.ok) toast(result.data.error || 'MCP update failed.', 'error');
     await loadInstalledMcps();
     loadMcpStatus();
+    loadBotFormOptions();
 });
 
 $('mcpAddToggleBtn')?.addEventListener('click', () => {
@@ -1985,6 +2011,7 @@ $('mcpAddBtn')?.addEventListener('click', async () => {
     toast(`'${name}' added to your MCP servers.`, 'success');
     await loadInstalledMcps();
     loadMcpStatus();
+    loadBotFormOptions();
 });
 
 /* ── Global handlers ─────────────────────────────────────────────── */

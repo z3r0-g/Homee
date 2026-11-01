@@ -244,3 +244,24 @@ def test_search_across_chats(page, monkeypatch, base_url):
         expect(page.locator(".message.search-hit")).to_contain_text("aardvark")
     finally:
         _delete_bot_via_api(base_url, bot_id)
+
+
+def test_new_bot_mcp_picker_fresh_without_reload(page, base_url):
+    """MCPs installed after page load appear in the New Bot picker — the
+    modal refreshes its options on every open (no page refresh needed)."""
+    resp = requests.post(f"{base_url}/api/mcps", json={
+        "name": "E2E Fresh MCP", "endpoint": "http://example.com", "method": "GET",
+    }, timeout=10)
+    resp.raise_for_status()
+    mcp_id = resp.json()["mcp"]["id"]
+    try:
+        # The page loaded before this MCP existed; opening the modal must
+        # still list it.
+        page.get_by_test_id("new-bot-btn").click()
+        item = page.locator('#newBotMcpsPicker .picker-item', has_text="E2E Fresh MCP")
+        expect(item).to_be_visible()
+        item.locator("[data-picker-toggle]").click()
+        expect(page.locator('#newBotMcpsPicker .picker-chip')).to_have_count(1)
+        page.click("#newBotModal .close-modal")
+    finally:
+        requests.delete(f"{base_url}/api/mcps/{mcp_id}", timeout=10)
