@@ -156,6 +156,15 @@ def llm_pull_status():
     """Current model-pull job state (idle/running/done/error)."""
     return jsonify({"job": llm_router.pull_job()})
 
+@settings_bp.route("/api/llm/sync", methods=["GET", "POST"])
+def llm_sync():
+    """Sync model catalog from ollama.com/search?c=local."""
+    from ..model_catalog import sync_model_catalog
+    synced = sync_model_catalog(force_remote=True)
+    return jsonify(synced)
+
+
+
 
 @settings_bp.route("/api/llm/catalog", methods=["GET"])
 def llm_catalog():

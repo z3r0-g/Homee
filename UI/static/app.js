@@ -1456,6 +1456,18 @@ async function pollPullModal() {
 
 $('pullModalClose')?.addEventListener('click', () => closeModal(pullModal));
 
+// UI sync function for model catalog
+$('modelSyncBtn')?.addEventListener('click', async () => {
+    const btn = $('modelSyncBtn');
+    await withBusyButton(btn, async () => {
+        toast('Syncing model catalog from ollama.com…', 'info');
+        const { ok, data } = await postJson('/api/llm/sync');
+        await refreshModelBrowser();
+        if (ok) toast(`Model catalog synced (${data.count || 0} models).`, 'success');
+        else toast('Model catalog sync failed.', 'error');
+    });
+});
+
 /* ── Marketplace shared helpers (Skills and MCPs) ────────────────── */
 
 const categoryOf = (item) => String(item.category || 'other').toLowerCase();
