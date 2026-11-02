@@ -41,6 +41,14 @@ control of your data.
 - `UI/scheduler.py` — stdlib background scheduler for timed bot runs
 - `UI/routes/` — Flask blueprints (bots, skills, mcps, knowledge, settings)
 
+**Runtime state — `UI/instances/`** (auto-created on startup; safe to delete for a full reset):
+- `settings.json` — persisted UI settings (LLM mode, scheduler, env vars)
+- `bots/` — bot state (`bots_state.json`) and per-bot chat history (`<bot_id>/history.jsonl`)
+- `knowledge/` — per-bot RAG knowledge bases (`kb_<bot_id>.md`), written when a bot's knowledge base is saved
+- `mcps/` — locally registered MCP servers (`mcps.json`), written when an MCP is added/imported
+
+`knowledge/` and `mcps/` stay empty until the first knowledge base or MCP registration is saved — empty does not mean unused.
+
 **Key Endpoints:**
 - `GET /api/bots` — List all bots
 - `POST /api/bots` — Create new bot (with assigned skill + schedule)

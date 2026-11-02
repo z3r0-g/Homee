@@ -1470,7 +1470,8 @@ $('modelSyncBtn')?.addEventListener('click', async () => {
 
 /* ── Marketplace shared helpers (Skills and MCPs) ────────────────── */
 
-const categoryOf = (item) => String(item.category || 'other').toLowerCase();
+// Entries without a category are the repo's own built-ins — label them "local".
+const categoryOf = (item) => String(item.category || 'local').toLowerCase();
 
 function switchSubTab(tabId, panelId) {
     const root = $(tabId);
@@ -1557,9 +1558,14 @@ function renderMarket(kind) {
         const cat = categoryOf(item);
         counts[cat] = (counts[cat] || 0) + 1;
     });
+    // A chip only qualifies as a filter when it narrows the inventory to at
+    // most half — broader chips (e.g. everything tagged "general") are noise.
+    const total = store.market.length;
+    const chipCats = Object.keys(counts).filter(cat => total > 0 && counts[cat] <= total / 2);
+    if (store.filter !== 'all' && !chipCats.includes(store.filter)) store.filter = 'all';
     const chips = $(cfg.chips);
     if (chips) {
-        chips.innerHTML = Object.keys(counts).sort().map(cat =>
+        chips.innerHTML = chipCats.sort().map(cat =>
             `<button type="button" class="chip${store.filter === cat ? ' active' : ''}" data-market-chip="${escapeHtml(cat)}" aria-pressed="${store.filter === cat}">${escapeHtml(cat)} <span class="chip-count">${counts[cat]}</span></button>`
         ).join('');
     }
