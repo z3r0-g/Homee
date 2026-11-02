@@ -22,3 +22,4 @@ AzuriteConfig
 #Application Memory
 UI/instances/settings.json
 UI/instances/bots/bots_state.json
+UI/instances/bots/*/history.jsonl
