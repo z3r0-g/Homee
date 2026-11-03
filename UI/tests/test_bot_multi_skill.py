@@ -12,7 +12,7 @@ import pytest
 
 from Skills.app import SkillBase
 from Skills.local.burgundy import BurgundySkill
-from Skills.local.demo import DemoSkill
+from Skills.local.mastodon import DemoSkill
 from Skills.local.homekeeper import HomeKeeperSkill
 from UI.models import Bot
 from UI.routes.bots import _resolve_bot_skills

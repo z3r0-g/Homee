@@ -114,6 +114,7 @@ class ShipwrightSkill(SkillBase):
         "fetch log traces before drawing conclusions. Never perform destructive "
         "actions without explicit admin confirmation."
     )
+    skills = ["container_health", "log_inspection"]
     tools = [
         fetch_container_logs,
         get_system_health,

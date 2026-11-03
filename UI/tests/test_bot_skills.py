@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from Skills.app import SkillBase
-from Skills.local.demo import DemoSkill
+from Skills.local.mastodon import DemoSkill
 from Skills.local.homekeeper import HomeKeeperSkill
 
 

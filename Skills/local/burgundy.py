@@ -1,15 +1,10 @@
-"""Burgundy Weather Skill — a San Diego-style weatherman.
-
-Provides forecasts from public weather data (wttr.in, no API key required)
-based on a US zip code or a browser-provided latitude/longitude.
+"""
+Burgundy News & Weather Skill — a laid-back beach city weatherman.
 """
 
 from __future__ import annotations
-
-from typing import Any, Dict, List
-
+from typing import Any, Dict
 import requests
-
 from Skills.app import SkillBase
 
 
@@ -279,6 +274,11 @@ class BurgundySkill(SkillBase):
         "invent numbers. Present current conditions and the short-term forecast "
         "clearly, then sign off with: Stay classy [Local City]!"
     )
+    skills = [
+        "weather_forecast",
+        "current_conditions",
+        "short_term_forecast",
+    ]
     tools = [
         get_weather_forecast,
         get_weather,

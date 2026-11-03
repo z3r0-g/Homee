@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from Skills.local import burgundy, demo, homekeeper, shipwright
+from Skills.local import burgundy, homekeeper, mastodon, shipwright
 from Skills.local.burgundy import BurgundySkill
-from Skills.local.demo import DemoSkill
+from Skills.local.mastodon import DemoSkill
 from Skills.local.homekeeper import HomeKeeperSkill
 from Skills.local.shipwright import ShipwrightSkill
 
@@ -21,7 +21,7 @@ from Skills.local.shipwright import ShipwrightSkill
 # ════════════════════════════════════════════════════════════════
 
 def test_demo_health_report_sections():
-    report = demo.render_health_report()
+    report = mastodon.render_health_report()
     assert "Server Health Report" in report
     assert "### 💾 Disk" in report
     assert "### 🧠 Memory" in report
@@ -40,15 +40,15 @@ def test_demo_process_snapshot_never_uses_top(monkeypatch):
             return "100 vscode 3.2 1.1 102400 01:02:03 code-server"
         return ""
 
-    monkeypatch.setattr(demo, "run_shell", _spy)
-    out = demo.get_process_snapshot()
+    monkeypatch.setattr(mastodon, "run_shell", _spy)
+    out = mastodon.get_process_snapshot()
     assert "Process Snapshot" in out
     assert "code-server" in out
     assert all("top" not in c or "htop" in c for c in calls), "top must never be invoked"
 
 
 def test_demo_parse_ps_rows_bad_lines_skipped():
-    rows = demo._parse_ps_rows("garbage\n\n1 root 0.0 0.1 2048 00:01 init", 5)
+    rows = mastodon._parse_ps_rows("garbage\n\n1 root 0.0 0.1 2048 00:01 init", 5)
     assert rows == [["1", "root", "0.0%", "0.1%", "2M", "00:01", "init"]]
 
 

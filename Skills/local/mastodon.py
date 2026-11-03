@@ -1,4 +1,4 @@
-"""Example Skill — a local system assistant with disk and shell tools.
+"""Local System Skill — a local system assistant with disk and shell tools.
 
 This is the reference implementation of a skill. Bots created in
 the UI can be assigned this (or any registered) Skill to embody its skill set.
@@ -333,6 +333,7 @@ class DemoSkill(SkillBase):
         "these tools. Provide server health reports and trending information when "
         "requested. Be concise, safe, and present results as readable markdown."
     )
+    skills = ["server_health", "process_snapshot", "shell_access"]
     tools = [get_disk_space, get_process_snapshot, run_shell]
 
 
