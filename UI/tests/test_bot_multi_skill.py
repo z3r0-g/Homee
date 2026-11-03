@@ -195,7 +195,7 @@ def test_multi_skill_bot_mcp_tools_gated(client, monkeypatch):
 
     def _chat(model=None, messages=None, tools=None, **kwargs):
         calls.append({"messages": messages, "tools": tools})
-        if tools:
+        if not any(m.get("role") == "tool" for m in messages):
             tc = SimpleNamespace(function=SimpleNamespace(
                 name="mcp_fetch", arguments={"query": "x"}))
             return SimpleNamespace(message=_FakeMessage("", [tc]))

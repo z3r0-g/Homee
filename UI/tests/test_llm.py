@@ -227,6 +227,45 @@ def test_chat_local_remote_local_falls_back_to_secondary_host(_tmp_settings):
     assert "http://otherhost:11434" in seen_hosts
 
 
+def test_query_remote_forwards_tools_and_parses_tool_calls(_tmp_settings, monkeypatch):
+    """Remote endpoints get the tool specs, and their tool_calls come back
+    normalized (arguments parsed from the OpenAI JSON-string form)."""
+    import UI.llm as llm_mod
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [{"function": {
+                    "name": "mcp_fetch",
+                    "arguments": "{\"query\": \"x\"}"}}],
+            }}]}
+
+    def _post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    monkeypatch.setattr(llm_mod.requests, "post", _post)
+
+    router = LLMRouter(client=FakeClient())
+    tools = [{"type": "function", "function": {"name": "mcp_fetch", "parameters": {}}}]
+    result = router.query_remote(
+        [{"role": "user", "content": "hi"}],
+        base_url="https://example.invalid/v1",
+        tools=tools,
+    )
+    assert captured["payload"]["tools"] == tools
+    assert result["message"]["tool_calls"] == [
+        {"function": {"name": "mcp_fetch", "arguments": {"query": "x"}}}]
+
+
 # ── Model delete + catalog ────────────────────────────────────────────
 
 class DeleteRecorder:

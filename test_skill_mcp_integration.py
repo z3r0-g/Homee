@@ -53,14 +53,14 @@ def fake_upstream():
 
 @pytest.fixture
 def fake_ollama(monkeypatch):
-    """First call (tools advertised) requests mcp_fetch; follow-up answers."""
+    """Requests mcp_fetch until a tool result comes back; then answers."""
     import ollama
 
     captured = []
 
     def _chat(model=None, messages=None, tools=None, **kwargs):
         captured.append({"model": model, "messages": messages, "tools": tools})
-        if tools:
+        if not any(m.get("role") == "tool" for m in messages):
             tc = SimpleNamespace(
                 function=SimpleNamespace(name="mcp_fetch", arguments={"query": "weather"}))
             return SimpleNamespace(message=_FakeMessage("", [tc]))
@@ -109,6 +109,10 @@ def test_bot_uses_marketplace_mcp_and_retains_skill(e2e_servers, fake_upstream, 
         assert first_call["messages"][0]["content"] == BurgundySkill.system_prompt
         tool_names = {t["function"]["name"] for t in first_call["tools"]}
         assert "mcp_fetch" in tool_names
+
+        # Regression: tools stay advertised on the follow-up call too — the
+        # model used to lose all tools after the first tool result.
+        assert fake_ollama[1]["tools"], "follow-up LLM call dropped tool specs"
 
         # The MCP round-trip really happened against the upstream.
         assert len(upstream_app.hits) == 1

@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from ..config import BOTS_DIR, MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
-from Skills.app import SkillBase, bot_base_context
+from Skills.app import MAX_TOOL_ROUNDS, SkillBase, bot_base_context
 from Skills.local.mastodon import get_server_health
 from Skills.registry import skill_registry
 
@@ -283,6 +283,58 @@ def _get_mcp_executor_and_tools(bot: Bot):
     return mcp_executor, mcp_tools
 
 
+def _fallback_chat_with_tools(
+    agent_cls: Optional[Type[SkillBase]],
+    messages: List[Dict[str, Any]],
+    mcp_executor: Any,
+    mcp_tools: List[Dict[str, Any]],
+    knowledge_path: Optional[str] = None,
+    model: Optional[str] = None,
+) -> str:
+    """Last-resort router chat that still advertises and executes tools.
+
+    Used when the skill's own ``execute()`` failed (e.g. the primary model is
+    missing): the router's fallback model gets the same tool specs, and tool
+    calls are dispatched through the skill's registry/MCP gate exactly as in
+    ``SkillBase.execute`` — so a bot keeps its tools on every backend.
+    """
+    try:
+        skill = agent_cls() if agent_cls else SkillBase()
+    except Exception:  # noqa: BLE001 - the skill class itself may be broken
+        skill = SkillBase()
+    specs = skill._build_tool_specs(mcp_tools=mcp_tools)
+    skill._active_mcp_ids = {m.get("id") or m.get("name") for m in mcp_tools or []}
+
+    content = ""
+    for round_no in range(MAX_TOOL_ROUNDS + 1):
+        result = llm_router.chat(
+            messages,
+            tools=None if round_no == MAX_TOOL_ROUNDS else (specs or None),
+            model=model,
+        )
+        if result.get("error"):
+            return result.get("message", {}).get("content", "")
+        msg = result.get("message", {})
+        content = msg.get("content", "") or content
+        round_calls = msg.get("tool_calls") or []
+        if not round_calls:
+            break
+        messages.append({
+            "role": "assistant",
+            "content": msg.get("content", "") or "",
+            "tool_calls": round_calls,
+        })
+        for tc in round_calls:
+            func = tc.get("function", {}) or {}
+            name = func.get("name", "")
+            result_text = skill._dispatch_tool(
+                name, func.get("arguments") or {},
+                knowledge_path=knowledge_path, mcp_executor=mcp_executor,
+            )
+            messages.append({"role": "tool", "content": result_text, "tool_name": name})
+    return content
+
+
 @bots_bp.route("/api/server-health", methods=["GET"])
 def server_health():
     """Host health (disk/memory/CPU) for the bot detail panel."""
@@ -503,9 +555,11 @@ def chat_bot(bot_id):
             user_turn["images"] = images
         messages.append(user_turn)
 
-        result = llm_router.chat(messages, model=model)
         assistant_response = _local_knowledge_notice(
-            result.get("message", {}).get("content", "")
+            _fallback_chat_with_tools(
+                agent_cls, messages, mcp_executor, mcp_tools,
+                knowledge_path=bot.knowledge_base_path, model=model,
+            )
         )
 
     received_at = _iso()
@@ -583,9 +637,11 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         ]
         messages.extend(bot.conversation_history[-20:])
         messages.append({"role": "user", "content": task_prompt})
-        llm_result = llm_router.chat(messages)
         result_text = _local_knowledge_notice(
-            llm_result.get("message", {}).get("content", "")
+            _fallback_chat_with_tools(
+                agent_cls, messages, mcp_executor, mcp_tools,
+                knowledge_path=bot.knowledge_base_path,
+            )
         )
 
     finished_at = _iso()

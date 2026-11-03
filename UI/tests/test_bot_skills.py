@@ -102,6 +102,42 @@ def test_failed_skill_uses_disclosed_local_knowledge_fallback(client, monkeypatc
     assert "local model knowledge only" in resp.get_json()["response"]
 
 
+def test_fallback_still_advertises_and_executes_tools(client, monkeypatch):
+    """When the skill path fails, the router fallback keeps the bot's tools:
+    specs are advertised and tool calls are dispatched through the MCP gate."""
+    from UI.routes import bots
+
+    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    monkeypatch.setattr(
+        SkillBase,
+        "execute",
+        lambda *args, **kwargs: SkillResult(content="", error="skill unavailable"),
+    )
+
+    chats = []
+
+    def _chat(messages, tools=None, model=None, **kwargs):
+        chats.append({"messages": messages, "tools": tools})
+        if any(m.get("role") == "tool" for m in messages):
+            return {"message": {"role": "assistant",
+                                "content": "fallback with tools", "tool_calls": []}}
+        return {"message": {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "mcp_system_disk", "arguments": {}}}]}}
+
+    monkeypatch.setattr(bots.llm_router, "chat", _chat)
+
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "disk?"})
+    assert resp.status_code == 200
+    body = resp.get_json()["response"]
+    assert "fallback with tools" in body
+    assert "local model knowledge only" in body
+    assert chats[0]["tools"], "fallback dropped tool specs"
+    tool_names = {t["function"]["name"] for t in chats[0]["tools"]}
+    assert "mcp_system_disk" in tool_names
+    tool_msgs = [m for m in chats[1]["messages"] if m.get("role") == "tool"]
+    assert tool_msgs and tool_msgs[0].get("tool_name") == "mcp_system_disk"
+
+
 def test_bot_with_saved_skill_uses_saved_prompt(client, fake_ollama):
     resp = client.post("/api/skills", json={
         "name": "Pirate", "system_prompt": "Ye be a pirate assistant."})

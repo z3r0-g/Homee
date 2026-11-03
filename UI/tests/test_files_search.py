@@ -142,8 +142,9 @@ def test_chat_attachment_in_fallback_llm_path(client, monkeypatch):
     captured = {}
 
     class _FakeRouter:
-        def chat(self, messages, model=None):
+        def chat(self, messages, tools=None, model=None):
             captured["messages"] = messages
+            captured["tools"] = tools
             return {"message": {"content": "fallback reply"}}
 
     monkeypatch.setattr("UI.routes.bots.llm_router", _FakeRouter())
@@ -154,7 +155,7 @@ def test_chat_attachment_in_fallback_llm_path(client, monkeypatch):
         "attachments": [{"name": "notes.md", "content": "# Notes\nhello"}],
     })
     assert resp.status_code == 200
-    assert resp.get_json()["response"] == "fallback reply"
+    assert "fallback reply" in resp.get_json()["response"]
     user_turn = captured["messages"][-1]
     assert user_turn["role"] == "user"
     assert "[User attached file: notes.md (13 chars)]" in user_turn["content"]

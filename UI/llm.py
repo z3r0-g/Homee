@@ -13,6 +13,7 @@ without restarting the service.
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -323,8 +324,14 @@ class LLMRouter:
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Query a remote OpenAI-compatible LLM endpoint."""
+        """Query a remote OpenAI-compatible LLM endpoint.
+
+        Tool specs are forwarded verbatim (OpenAI ``tools`` schema), and any
+        ``tool_calls`` on the response message are normalized to the same
+        shape the Ollama path returns (arguments as a dict).
+        """
         llm_cfg = self._settings["llm"]
         base_url = base_url or llm_cfg.get("remote_base_url", "")
         api_key = api_key if api_key is not None else llm_cfg.get("remote_api_key", "")
@@ -345,6 +352,8 @@ class LLMRouter:
             "model": model,
             "messages": messages,
         }
+        if tools:
+            payload["tools"] = tools
 
         try:
             resp = requests.post(
@@ -357,11 +366,24 @@ class LLMRouter:
             data = resp.json()
             choice = data.get("choices", [{}])[0]
             msg = choice.get("message", {})
+            tool_calls = []
+            for tc in msg.get("tool_calls") or []:
+                func = tc.get("function", {}) or {}
+                args = func.get("arguments") or {}
+                if isinstance(args, str):
+                    # OpenAI-compatible endpoints return a JSON string.
+                    try:
+                        args = json.loads(args)
+                    except ValueError:
+                        args = {}
+                tool_calls.append({
+                    "function": {"name": func.get("name", ""), "arguments": args},
+                })
             return {
                 "message": {
                     "role": msg.get("role", "assistant"),
                     "content": msg.get("content", "") or "",
-                    "tool_calls": [],
+                    "tool_calls": tool_calls,
                 }
             }
         except Exception as e:  # noqa: BLE001
@@ -392,7 +414,7 @@ class LLMRouter:
             return self._chat_local_with_fallback(messages, tools=tools, model=model)
 
         if provider == "remote":
-            result = self.query_remote(messages, model=model)
+            result = self.query_remote(messages, model=model, tools=tools)
             if result.get("error"):
                 local_result = self.query_local(messages, tools=tools, model=model)
                 if not local_result.get("error"):
@@ -440,6 +462,7 @@ class LLMRouter:
                 model=llm_cfg.get("secondary_model") or None,
                 base_url=llm_cfg.get("secondary_base_url") or None,
                 api_key=llm_cfg.get("secondary_api_key") or None,
+                tools=tools,
             )
             if not remote_result.get("error"):
                 return remote_result

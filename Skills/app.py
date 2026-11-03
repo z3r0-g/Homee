@@ -19,6 +19,10 @@ __all__ = ["SkillBase", "SkillResult"]
 
 SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 MAX_KNOWLEDGE_CACHE_CHARS = 8_000
+# Cap on tool-calling rounds per turn: the model may chain several tools
+# (e.g. a news MCP after a weather tool), but a stuck model must not loop
+# forever. The final round drops the tool specs to force a text answer.
+MAX_TOOL_ROUNDS = 8
 
 
 def bot_base_context(knowledge_path: Optional[str] = None) -> str:
@@ -118,36 +122,65 @@ class SkillBase:
 
         ollama_tools = self._build_tool_specs(mcp_tools=mcp_tools)
 
-        try:
-            response = ollama.chat(model=self.model, messages=messages, tools=ollama_tools or None)
-        except Exception as e:  # noqa: BLE001
-            return SkillResult(content=f"Skill LLM error: {e}", error=str(e))
-        msg = response.message
-        assistant_content = getattr(msg, "content", "") or ""
-
         tool_calls: List[Dict[str, Any]] = []
         knowledge_updated = False
+        assistant_content = ""
 
-        for tc in getattr(msg, "tool_calls", []) or []:
-            func_name = getattr(tc.function, "name", "")
-            func_args = getattr(tc.function, "arguments", {}) or {}
-            tool_calls.append({"name": func_name, "arguments": func_args})
-
-            result_text = self._dispatch_tool(
-                func_name, func_args, knowledge_path=knowledge_path, mcp_executor=mcp_executor
-            )
-            if func_name == "knowledge_base":
-                knowledge_updated = True
-
-            messages.append({"role": "assistant", "content": assistant_content})
-            messages.append({"role": "tool", "content": result_text, "tool_name": func_name})
-
-        if tool_calls:
+        # Multi-round tool loop: tools stay advertised on every round so the
+        # model can chain calls (e.g. a news MCP after a weather tool) and
+        # react to earlier results. Dropping tools after the first round used
+        # to make the model conclude it "has no access to the MCP tools".
+        for round_no in range(MAX_TOOL_ROUNDS + 1):
+            force_answer = round_no == MAX_TOOL_ROUNDS
             try:
-                final = ollama.chat(model=self.model, messages=messages)
-                assistant_content = getattr(final.message, "content", "") or assistant_content
+                response = ollama.chat(
+                    model=self.model,
+                    messages=messages,
+                    tools=None if force_answer else (ollama_tools or None),
+                )
             except Exception as e:  # noqa: BLE001
-                assistant_content = f"{assistant_content}\nTool follow-up error: {e}"
+                if not tool_calls and not assistant_content:
+                    return SkillResult(content=f"Skill LLM error: {e}", error=str(e))
+                assistant_content = f"{assistant_content}\nTool follow-up error: {e}".strip()
+                break
+            msg = response.message
+            content = getattr(msg, "content", "") or ""
+            if content:
+                assistant_content = content
+
+            round_calls = [
+                {
+                    "name": getattr(tc.function, "name", ""),
+                    "arguments": getattr(tc.function, "arguments", {}) or {},
+                }
+                for tc in getattr(msg, "tool_calls", []) or []
+            ]
+            if not round_calls:
+                break
+            tool_calls.extend(round_calls)
+
+            # One assistant message carrying the tool calls, then one tool
+            # message per result — the sequence chat templates expect.
+            messages.append({
+                "role": "assistant",
+                "content": content,
+                "tool_calls": [
+                    {"function": {"name": c["name"], "arguments": c["arguments"]}}
+                    for c in round_calls
+                ],
+            })
+            for call in round_calls:
+                result_text = self._dispatch_tool(
+                    call["name"], call["arguments"],
+                    knowledge_path=knowledge_path, mcp_executor=mcp_executor,
+                )
+                if call["name"] == "knowledge_base":
+                    knowledge_updated = True
+                messages.append({
+                    "role": "tool",
+                    "content": result_text,
+                    "tool_name": call["name"],
+                })
 
         return SkillResult(
             content=assistant_content,

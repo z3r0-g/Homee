@@ -170,3 +170,46 @@ def test_mcp_tool_call_dispatches_to_executor(monkeypatch):
     # The tool result is fed back to the model before the final answer.
     follow_up = calls[1]["messages"]
     assert any(m.get("role") == "tool" and "page contents" in str(m.get("content")) for m in follow_up)
+
+
+def test_tool_calls_chain_across_rounds(monkeypatch):
+    """Regression: tools stay advertised after a tool result, so the model can
+    chain another tool call instead of concluding it has no tool access."""
+    import ollama
+
+    calls = []
+    executor_calls = []
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        calls.append({"messages": messages, "tools": tools})
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        if len(tool_msgs) >= 2:
+            return SimpleNamespace(message=_FakeMessage("chained answer", []))
+        if tool_msgs:
+            tc = SimpleNamespace(function=SimpleNamespace(name="get_disk_space", arguments={}))
+        else:
+            tc = SimpleNamespace(function=SimpleNamespace(name="mcp_fetch", arguments={"query": "x"}))
+        return SimpleNamespace(message=_FakeMessage("", [tc]))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+
+    def _executor(mcp_id, args):
+        executor_calls.append((mcp_id, args))
+        return {"result": "page contents"}
+
+    skill = DemoSkill()
+    result = skill.execute("fetch then check disk", mcp_executor=_executor,
+                           mcp_tools=[{"id": "fetch", "name": "Fetch"}])
+    assert result.content == "chained answer"
+    assert [c["name"] for c in result.tool_calls] == ["mcp_fetch", "get_disk_space"]
+    assert executor_calls == [("fetch", {"query": "x"})]
+    # Tools were advertised on every LLM call, not just the first.
+    assert calls and all(c["tools"] for c in calls)
+    # Each tool result immediately follows an assistant message that carries
+    # the corresponding tool call (the sequence chat templates expect).
+    for call in calls[1:]:
+        msgs = call["messages"]
+        for i, m in enumerate(msgs):
+            if m.get("role") == "tool":
+                assert msgs[i - 1].get("role") == "assistant"
+                assert msgs[i - 1].get("tool_calls")
