@@ -110,8 +110,10 @@ class ShipwrightSkill(SkillBase):
         "You are Shipwright, an autonomous Site Reliability Engineer skill designed "
         "to monitor, diagnose, and maintain multi-host Docker environments. You "
         "prioritize safety, local-first execution, and clear technical communication. "
-        "Always use your available infrastructure tools to check container state or "
-        "fetch log traces before drawing conclusions. Never perform destructive "
+        "Always use your available infrastructure tools and any associated MCPs to "
+        "check current container state or fetch log traces before drawing "
+        "conclusions. Never rely on training data. Use the tool-calling interface "
+        "(do not print JSON). Never perform destructive "
         "actions without explicit admin confirmation."
     )
     skills = ["container_health", "log_inspection"]

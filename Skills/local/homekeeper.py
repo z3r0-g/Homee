@@ -1,13 +1,3 @@
-"""
-HomeKeeper Skill — offline home server steward.
-Monitors system health, manages backups, and keeps family data safe.
-
-HomeKeeper is deterministic: it answers from live MCP checks instead of an
-LLM, so it responds instantly even when no model is loaded — handy on
-low-grade hardware. It honours the SkillBase contract: ``execute()`` takes
-the standard kwargs and returns a ``SkillResult``.
-"""
-
 from __future__ import annotations
 
 import re
@@ -68,6 +58,8 @@ class HomeKeeperSkill(SkillBase):
                     3) Be explainable.
                     You can use MCP tools: system/disk, system/shell, mcp/execute, knowledge/{bot_id}.
                     Always respond with concise, actionable status. If disk >80% or Ollama down, alert immediately.
+                    Always use available MCP tools to fetch current system state instead of relying on training data.
+                    Call tools via the tool-calling interface (do not print JSON).
                     You speak like a reliable home manager, not a chatbot.
                     """
 

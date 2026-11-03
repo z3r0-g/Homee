@@ -114,14 +114,14 @@ def test_burgundy_agent_subclass():
     assert issubclass(BurgundySkill, SkillBase)
     assert BurgundySkill is BurgundyWeatherSkill
     skill = BurgundySkill()
-    assert skill.name == "Burgundy (Weather Skill)"
+    assert skill.name == "Burgundy (Anchorman Skill)"
     assert skill.model == "llama3.2:3b"
 
 
 def test_registry_lists_burgundy_agent():
     skills = skill_registry.list_skills()
     names = {a["name"] for a in skills}
-    assert "Burgundy (Weather Skill)" in names
+    assert "Burgundy (Anchorman Skill)" in names
 
 
 def test_burgundy_has_weather_tools():
