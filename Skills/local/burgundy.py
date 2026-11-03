@@ -1,15 +1,6 @@
-"""Burgundy Weather Skill — a San Diego-style weatherman.
-
-Provides forecasts from public weather data (wttr.in, no API key required)
-based on a US zip code or a browser-provided latitude/longitude.
-"""
-
 from __future__ import annotations
-
-from typing import Any, Dict, List
-
+from typing import Any, Dict
 import requests
-
 from Skills.app import SkillBase
 
 
@@ -258,6 +249,31 @@ def get_forecast_by_location(latitude: float = 0.0, longitude: float = 0.0, unit
     return get_weather_by_location(latitude=latitude, longitude=longitude, units=units)
 
 
+def get_news(topic: str = "", limit: int = 5) -> str:
+    """Fetch current top headlines from Hacker News (public, no API key)."""
+    try:
+        ids = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=15).json()
+    except Exception as e:  # noqa: BLE001
+        return f"News unavailable: {e}"
+    items = []
+    for sid in (ids or [])[: max(1, min(limit, 10))]:
+        try:
+            item = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{sid}.json", timeout=15).json()
+        except Exception:  # noqa: BLE001
+            continue
+        if not item or item.get("type") != "story":
+            continue
+        if topic and topic.lower() not in (item.get("title", "") + " " + item.get("text", "")).lower():
+            continue
+        items.append(f"- {item.get('title')} ({item.get('url', 'no url')})")
+        if len(items) >= limit:
+            break
+    if not items:
+        return "No matching news found."
+    return "Current headlines:\n" + "\n".join(items)
+
+
+
 def weather(location: str = "", zip_code: str = "", latitude: float = 0.0, longitude: float = 0.0, units: str = "imperial") -> str:
     """Short alias for get_weather_forecast."""
     return get_weather_forecast(location=location, zip_code=zip_code, latitude=latitude, longitude=longitude, units=units)
@@ -269,16 +285,24 @@ def forecast(location: str = "", zip_code: str = "", latitude: float = 0.0, long
 
 
 class BurgundySkill(SkillBase):
-    name = "Burgundy (Weather Skill)"
-    description = "A San Diego-style weatherman providing forecasts from public data by zip code or browser location."
+    name = "Burgundy (Anchorman Skill)"
+    description = "A San Diego-style anchorman providing current news and weather from public data."
     system_prompt = (
-        "You are Ron Burgundy, a charismatic San Diego weatherman. You deliver "
-        "forecasts with confidence, charm, and a touch of bravado. Always use the "
-        "available weather tools to fetch real public forecast data for the user's "
-        "zip code or browser-provided latitude/longitude before answering. Never "
-        "invent numbers. Present current conditions and the short-term forecast "
-        "clearly, then sign off with: Stay classy [Local City]!"
+        "You are Ron Burgundy, a charismatic San Diego anchorman. You deliver "
+        "news and forecasts with confidence, charm, and a touch of bravado. "
+        "Always use the available news and weather tools AND any associated MCP "
+        "tools to fetch real, current data before answering. Never rely on your "
+        "training data or invent facts; if current data is available through a "
+        "skill or MCP, call it using the tool-calling interface (do not print "
+        "JSON). Present headlines and current conditions clearly, then sign off "
+        "with: Stay classy [Local City]!"
     )
+    skills = [
+        "weather_forecast",
+        "current_conditions",
+        "short_term_forecast",
+        "news_headlines",
+    ]
     tools = [
         get_weather_forecast,
         get_weather,
@@ -290,6 +314,7 @@ class BurgundySkill(SkillBase):
         get_forecast_by_location,
         weather,
         forecast,
+        get_news,
     ]
 
 

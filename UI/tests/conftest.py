@@ -20,10 +20,14 @@ def _reset_state() -> None:
     bots_repo._bots.clear()
     skills_repo._skills.clear()
     mcps_repo._mcps.clear()
+    from UI.registry_sync import _DATA
+
     for path in (
         bots_repo._path,
         mcps_repo._path,
         Path(SETTINGS_FILE),
+        _DATA / "registry_mcp.json",
+        _DATA / "registry_skills.json",
     ):
         try:
             path.unlink(missing_ok=True)

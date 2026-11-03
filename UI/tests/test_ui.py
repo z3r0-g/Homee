@@ -298,6 +298,134 @@ def test_mcp_sync_registry(client):
     assert resp.get_json()["success"] is True
 
 
+def test_mcp_reload_proxy(client, monkeypatch):
+    """UI /api/mcp/reload proxies to the MCP service reload endpoint."""
+    import UI.routes.mcps as mcps_routes
+
+    seen = {}
+
+    def _stub(method, path, json_body=None):
+        seen["method"], seen["path"] = method, path
+        return {"success": True, "count": 2, "ids": ["a", "b"]}, 200
+
+    monkeypatch.setattr(mcps_routes, "_proxy", _stub)
+    resp = client.post("/api/mcp/reload")
+    assert resp.status_code == 200
+    assert resp.get_json()["ids"] == ["a", "b"]
+    assert seen == {"method": "POST", "path": "/api/mcp/reload"}
+
+
+def test_mcp_sync_persists_snapshot_for_marketplace(client, monkeypatch):
+    """After a successful remote sync, /api/mcp/remote (no refresh) must
+    serve the synced entries — not the stale shipped snapshot."""
+    import UI.registry_sync as registry_sync
+    import UI.routes.mcps as mcps_routes
+
+    monkeypatch.setattr(mcps_routes, "_proxy",
+                        lambda *a, **k: ({"error": "not found"}, 404))
+
+    def _server(name, version="1.0.0", is_latest=True):
+        return {
+            "server": {
+                "name": name,
+                "description": f"{name} v{version}",
+                "version": version,
+                "remotes": [{"type": "streamable-http",
+                             "url": f"https://mcp.example/{name}/{version}"}],
+            },
+            "_meta": {"io.modelcontextprotocol.registry/official":
+                      {"isLatest": is_latest}},
+        }
+
+    # 30 unique servers, plus an older duplicate version of server-0.
+    fake_servers = [_server(f"io.example/server-{i}") for i in range(30)]
+    fake_servers.append(_server("io.example/server-0", version="0.9.0",
+                                is_latest=False))
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"servers": fake_servers, "metadata": {}}
+
+    monkeypatch.setattr(registry_sync.requests, "get", lambda *a, **k: _Resp())
+    resp = client.post("/api/mcp/sync")
+    assert resp.status_code == 200
+    assert resp.get_json()["count"] == 30  # duplicate version deduped
+
+    monkeypatch.setattr(registry_sync.requests, "get", lambda *a, **k: 1 / 0)
+    resp = client.get("/api/mcp/remote")
+    assert resp.status_code == 200
+    mcps = resp.get_json()["mcps"]
+    ids = [m["id"] for m in mcps]
+    assert "io.example-server-0" in ids  # URL-safe id (slash replaced)
+    assert "io.example-server-29" in ids
+    assert "lb-mcp-1" not in ids  # synced cache supersedes the shipped snapshot
+    first = [m for m in mcps if m["id"] == "io.example-server-0"][0]
+    assert first["endpoint"] == "https://mcp.example/io.example/server-0/1.0.0"
+    assert first["name"] == "io.example/server-0"  # registry name as display name
+
+
+def test_registry_categorize_distributes_entries():
+    from UI.registry_sync import categorize
+
+    assert categorize("Slack", "Send and read channel messages") == "Communication"
+    assert categorize("Postgres", "Run SQL queries against your database") == "Data & Databases"
+    assert categorize("GitHub", "Manage repos, commits and pull requests") == "Developer Tools"
+    assert categorize("Graffeo Coffee Roasting", "Roast profiles") == "General"
+    # "agent" alone must not swallow everything into AI & ML
+    assert categorize("Brave Search", "Web search for agents") == "Search & Web"
+
+
+def test_registry_parse_assigns_category_when_missing():
+    from UI.registry_sync import _parse_registry_server
+
+    entry, name, is_latest = _parse_registry_server({
+        "server": {"name": "ac.example/slack-bot",
+                   "description": "Slack messaging integration"},
+    })
+    assert name == "ac.example/slack-bot" and is_latest is True
+    assert entry["category"] == "Communication"
+
+
+def test_mcp_registry_cache_without_ids_falls_back_to_legacy(client):
+    """A synced cache whose entries all lack ids is ignored in favour of the
+    shipped snapshot (e.g. cache written before wrapped-shape parsing)."""
+    import UI.registry_sync as registry_sync
+
+    cache = registry_sync._DATA / "registry_mcp.json"
+    cache.write_text('{"entries": [{"id": ""}, {"id": ""}]}', encoding="utf-8")
+    try:
+        snap = registry_sync.sync_mcp_registry(force_remote=False)
+    finally:
+        cache.unlink(missing_ok=True)
+    ids = [e["id"] for e in snap["entries"]]
+    assert "lb-mcp-1" in ids
+
+
+def test_skills_sync_persists_snapshot_for_marketplace(client, monkeypatch):
+    import UI.registry_sync as registry_sync
+
+    fake_skills = [{"id": f"skill-{i}", "name": f"Skill {i}"} for i in range(30)]
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"skills": fake_skills}
+
+    monkeypatch.setattr(registry_sync.requests, "get", lambda *a, **k: _Resp())
+    resp = client.post("/api/skills/sync")
+    assert resp.status_code == 200
+    assert resp.get_json()["count"] == 30
+
+    monkeypatch.setattr(registry_sync.requests, "get", lambda *a, **k: 1 / 0)
+    resp = client.get("/api/skills/marketplace")
+    assert resp.status_code == 200
+    names = [s["name"] for s in resp.get_json()["skills"]]
+    assert names == [f"Skill {i}" for i in range(30)]
+
+
 def test_skills_sync_registry(client):
     resp = client.post("/api/skills/sync")
     assert resp.status_code == 200

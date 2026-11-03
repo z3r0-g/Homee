@@ -13,7 +13,7 @@ from ..config import BOTS_DIR, MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
 from Skills.app import SkillBase, bot_base_context
-from Skills.local.demo import get_server_health
+from Skills.local.mastodon import get_server_health
 from Skills.registry import skill_registry
 
 bots_bp = Blueprint("bots", __name__)

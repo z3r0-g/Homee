@@ -147,6 +147,12 @@ def mcp_sync():
     })
 
 
+@mcps_bp.route("/api/mcp/reload", methods=["POST"])
+def mcp_reload():
+    """Ask the MCP service to reload its registry from disk (mcps.json)."""
+    return _proxy("POST", "/api/mcp/reload")
+
+
 @mcps_bp.route("/api/mcp/import/<mcp_id>", methods=["POST"])
 def mcp_import(mcp_id):
     """One-click install of an MCP server.

@@ -41,6 +41,14 @@ control of your data.
 - `UI/scheduler.py` — stdlib background scheduler for timed bot runs
 - `UI/routes/` — Flask blueprints (bots, skills, mcps, knowledge, settings)
 
+**Runtime state — `UI/instances/`** (auto-created on startup; safe to delete for a full reset):
+- `settings.json` — persisted UI settings (LLM mode, scheduler, env vars)
+- `bots/` — bot state (`bots_state.json`) and per-bot chat history (`<bot_id>/history.jsonl`)
+- `knowledge/` — per-bot RAG knowledge bases (`kb_<bot_id>.md`), written when a bot's knowledge base is saved
+- `mcps/` — locally registered MCP servers (`mcps.json`), written when an MCP is added/imported
+
+`knowledge/` and `mcps/` stay empty until the first knowledge base or MCP registration is saved — empty does not mean unused.
+
 **Key Endpoints:**
 - `GET /api/bots` — List all bots
 - `POST /api/bots` — Create new bot (with assigned skill + schedule)
@@ -49,6 +57,7 @@ control of your data.
 - `GET /api/mcp/remote` — Synced MCP marketplace from Official MCP Registry & Smithery
 - `POST /api/mcp/import/{id}` — 1-click install remote MCP (with auto-resolved endpoint and credentials)
 - `POST /api/mcp/sync` — Sync MCP registry with Official Registry and Smithery
+- `POST /api/mcp/reload` — Reload MCP registry from `mcps.json` (after an out-of-band edit)
 - `GET /api/skills/marketplace` — Skills marketplace synced from Smithery
 - `POST /api/skills/sync` — Sync skills marketplace from Smithery
 - `GET /api/skills/active` — Active skills list

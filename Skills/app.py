@@ -17,10 +17,6 @@ import ollama
 
 __all__ = ["SkillBase", "SkillResult"]
 
-# NOTE on tags: in Ollama, a bare "llama3.2" resolves to the :latest tag,
-# which is NOT satisfied by an installed "llama3.2:3b" — always use a full
-# tag. OLLAMA_MODEL wins when set (same convention as the UI service),
-# so a host with a different tag installed (e.g. llama3.2:3b) just sets it.
 SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 MAX_KNOWLEDGE_CACHE_CHARS = 8_000
 
@@ -67,7 +63,11 @@ class SkillResult:
 class SkillBase:
     name: str = "Generic Homee"
     description: str = "A generic AI skill."
-    system_prompt: str = "You are a helpful assistant."
+    system_prompt: str = (
+        "You are a helpful assistant. Always use available skills, tools, and "
+        "MCPs to fetch current, up-to-date information instead of relying on "
+        "your training data. Use the tool-calling interface (do not print JSON)."
+    )
     model: str = SKILL_MODEL
     tools: List[Callable[..., Any]] = []
     # Default for the base class itself; __init_subclass__ rebuilds it per subclass.

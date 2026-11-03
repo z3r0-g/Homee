@@ -1,11 +1,3 @@
-"""Example Skill — a local system assistant with disk and shell tools.
-
-This is the reference implementation of a skill. Bots created in
-the UI can be assigned this (or any registered) Skill to embody its skill set.
-It provides server health reports, a live process snapshot (via ``htop``,
-never ``top``), and trending information — all presented as readable markdown.
-"""
-
 from __future__ import annotations
 
 import os
@@ -330,9 +322,13 @@ class DemoSkill(SkillBase):
         "You are a helpful local system assistant. You have access to tools for "
         "checking disk space, running shell commands, and fetching a live process "
         "snapshot (via htop, never top). When the user asks about the system, use "
-        "these tools. Provide server health reports and trending information when "
-        "requested. Be concise, safe, and present results as readable markdown."
+        "these tools and any associated MCP tools to fetch current data. Never "
+        "rely on training data. Use the tool-calling interface (do not print "
+        "JSON). Provide server health reports and trending "
+        "information when requested. Be concise, safe, and present results as "
+        "readable markdown."
     )
+    skills = ["server_health", "process_snapshot", "shell_access"]
     tools = [get_disk_space, get_process_snapshot, run_shell]
 
 
