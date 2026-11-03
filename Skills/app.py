@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -21,6 +22,37 @@ __all__ = ["SkillBase", "SkillResult"]
 # tag. OLLAMA_MODEL wins when set (same convention as the UI service),
 # so a host with a different tag installed (e.g. llama3.2:3b) just sets it.
 SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+MAX_KNOWLEDGE_CACHE_CHARS = 8_000
+
+
+def bot_base_context(knowledge_path: Optional[str] = None) -> str:
+    """Return shared, date-aware policy and the bot's bounded local cache."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    cache = ""
+    if knowledge_path:
+        path = Path(knowledge_path)
+        try:
+            if path.exists():
+                cache = path.read_text(encoding="utf-8")[-MAX_KNOWLEDGE_CACHE_CHARS:]
+        except OSError as exc:
+            cache = f"[Knowledge cache unavailable: {exc}]"
+
+    cache_context = (
+        f"\n\nLocal knowledge cache (check this first):\n{cache}"
+        if cache else
+        "\n\nLocal knowledge cache: no cached information is available for this bot."
+    )
+    return (
+        f"Homee base policy — today's date is {today} (UTC). Keep dates and "
+        "time-sensitive reasoning relevant to today. For every request: first "
+        "check the local knowledge cache below; second, use an available Skill "
+        "or MCP tool when current, external, or verifiable information is "
+        "needed; only then answer from local model knowledge. When answering "
+        "without cache or tool evidence, clearly say that it is local model "
+        f"knowledge and may be outdated as of {today}. Do not claim a tool was "
+        "used when it was not."
+        f"{cache_context}"
+    )
 
 @dataclass
 class SkillResult:
@@ -66,7 +98,8 @@ class SkillBase:
     ) -> SkillResult:
         """Run one turn of the skill: LLM call + optional tool execution."""
         messages: List[Dict[str, Any]] = [
-            {"role": "system", "content": self.system_prompt}
+            {"role": "system", "content": self.system_prompt},
+            {"role": "system", "content": bot_base_context(knowledge_path)},
         ]
         if conversation_history:
             messages.extend(conversation_history[-20:])
