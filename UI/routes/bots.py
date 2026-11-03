@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from ..config import BOTS_DIR, MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
-from Skills.app import SkillBase
+from Skills.app import SkillBase, bot_base_context
 from Skills.local.mastodon import get_server_health
 from Skills.registry import skill_registry
 
@@ -21,6 +21,16 @@ llm_router = LLMRouter()
 
 # PLAN.md 1.1: attached files are truncated to 12k chars before injection.
 MAX_ATTACHMENT_CHARS = 12_000
+
+
+def _local_knowledge_notice(content: str) -> str:
+    """Disclose that a last-resort reply was generated without tool evidence."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    return (
+        f"{content}\n\n"
+        f"_Source: local model knowledge only; it may be outdated as of {today}. "
+        "No cache or tool result was available for this reply._"
+    )
 
 
 def _iso() -> str:
@@ -483,7 +493,10 @@ def chat_bot(bot_id):
 
     # Fallback to LLM router if skill execution failed or returned error
     if not executed_skill:
-        messages = [{"role": "system", "content": system_prompt}]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": bot_base_context(bot.knowledge_base_path)},
+        ]
         messages.extend(bot.conversation_history[-20:])
         user_turn: Dict[str, Any] = {"role": "user", "content": full_prompt}
         if images:
@@ -491,7 +504,9 @@ def chat_bot(bot_id):
         messages.append(user_turn)
 
         result = llm_router.chat(messages, model=model)
-        assistant_response = result.get("message", {}).get("content", "")
+        assistant_response = _local_knowledge_notice(
+            result.get("message", {}).get("content", "")
+        )
 
     received_at = _iso()
     user_entry: Dict[str, Any] = {"role": "user", "content": user_message, "timestamp": sent_at}
@@ -562,11 +577,16 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
             executed_skill = False
 
     if not executed_skill:
-        messages = [{"role": "system", "content": system_prompt}]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": bot_base_context(bot.knowledge_base_path)},
+        ]
         messages.extend(bot.conversation_history[-20:])
         messages.append({"role": "user", "content": task_prompt})
         llm_result = llm_router.chat(messages)
-        result_text = llm_result.get("message", {}).get("content", "")
+        result_text = _local_knowledge_notice(
+            llm_result.get("message", {}).get("content", "")
+        )
 
     finished_at = _iso()
 

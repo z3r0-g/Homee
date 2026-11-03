@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from Skills.app import SkillBase
+from Skills.app import SkillBase, SkillResult
 from Skills.local.mastodon import DemoSkill
 from Skills.local.homekeeper import HomeKeeperSkill
 
@@ -69,6 +69,37 @@ def test_bot_without_skill_uses_base_prompt(client, fake_ollama):
     assert resp.status_code == 200
     assert resp.get_json()["response"] == "skill reply"
     assert fake_ollama[0]["messages"][0]["content"] == SkillBase.system_prompt
+
+
+def test_base_flow_injects_date_aware_cache_and_tool_policy(client, fake_ollama):
+    bot_id = _create_bot(client)
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hello"})
+    assert resp.status_code == 200
+    policy = fake_ollama[0]["messages"][1]["content"]
+    assert "today's date is" in policy
+    assert "first check the local knowledge cache" in policy
+    assert "second, use an available Skill or MCP tool" in policy
+
+
+def test_failed_skill_uses_disclosed_local_knowledge_fallback(client, monkeypatch):
+    from UI.routes import bots
+
+    bot_id = _create_bot(client)
+    monkeypatch.setattr(
+        SkillBase,
+        "execute",
+        lambda *args, **kwargs: SkillResult(content="", error="skill unavailable"),
+    )
+    monkeypatch.setattr(
+        bots.llm_router,
+        "chat",
+        lambda *args, **kwargs: {"message": {"content": "fallback reply"}},
+    )
+
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hello"})
+    assert resp.status_code == 200
+    assert "fallback reply" in resp.get_json()["response"]
+    assert "local model knowledge only" in resp.get_json()["response"]
 
 
 def test_bot_with_saved_skill_uses_saved_prompt(client, fake_ollama):

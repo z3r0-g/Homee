@@ -19,7 +19,7 @@ control of your data.
 
 ## Features
 
-- **Bots with assigned Skills** — every bot replies through its assigned skill(s): combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
+- **Bots with assigned Skills** — every bot follows the same local-first base flow: check its bounded knowledge cache, use its assigned Skills and MCP tools for current or verifiable work, then transparently fall back to local-model knowledge when no evidence is available. The shared policy supplies today's UTC date to keep time-sensitive responses relevant; Skills and MCPs extend this base behavior. Combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
 - **Ask About a File** — ✅ Available. Paperclip in the composer attaches a text file (`.txt,.md,.json,.py,.log`, <1MB); it is injected into the prompt (truncated to 12k chars) and never written to disk.
 - **Search Across Chats** — ✅ Available. Sidebar search box scans every bot's full chat history (`UI/instances/bots/*/history.jsonl`), debounced, and opens the bot scrolled to the match.
 - **MCP Marketplace** — one-click install from the Official MCP Registry & Smithery; assign MCPs per bot.
