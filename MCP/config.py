@@ -30,50 +30,9 @@ DEBUG = os.getenv("MCP_DEBUG", "false").lower() == "true"
 
 UI_SERVICE_URL = os.getenv("UI_SERVICE_URL", "http://localhost:5001")
 
-# Pre-configured marketplace entries with resolved endpoints and auth metadata
-MARKETPLACE: Dict[str, Dict[str, Any]] = {
-    "github": {
-        "id": "github",
-        "name": "GitHub",
-        "description": "Integrate with GitHub API",
-        "endpoint": "https://api.github.com/mcp",
-        "method": "POST",
-        "categories": ["code_repository", "version_control"],
-        "requires_auth": True,
-        "auth_type": "bearer",
-        "auth_note": "Requires GitHub Personal Access Token",
-    },
-    "slack": {
-        "id": "slack",
-        "name": "Slack",
-        "description": "Integrate with Slack API",
-        "endpoint": "https://mcp.run/slack",
-        "method": "POST",
-        "categories": ["communication", "notifications"],
-        "requires_auth": True,
-        "auth_type": "bearer",
-        "auth_note": "Requires Slack Bot Token",
-    },
-    "google_sheets": {
-        "id": "google_sheets",
-        "name": "Google Sheets",
-        "description": "Integrate with Google Sheets API",
-        "endpoint": "https://mcp.run/google-sheets",
-        "method": "POST",
-        "categories": ["data", "spreadsheets"],
-        "requires_auth": True,
-        "auth_type": "bearer",
-        "auth_note": "Requires Google OAuth / API Key",
-    },
-    "fetch": {
-        "id": "fetch",
-        "name": "Fetch",
-        "description": "Web fetcher for pages and APIs",
-        "endpoint": "https://mcp.run/fetch",
-        "method": "GET",
-        "categories": ["api", "web"],
-        "requires_auth": False,
-        "auth_type": "none",
-        "auth_note": "No credentials required",
-    },
-}
+# Pre-configured marketplace entries with resolved endpoints and auth metadata.
+# The built-in entries (github/slack/google_sheets/fetch) were retired: their
+# endpoints are dead (mcp.run shut down and now redirects to a landing page).
+# The marketplace is served from the synced Official MCP Registry & Smithery
+# snapshot instead (see UI registry_sync).
+MARKETPLACE: Dict[str, Dict[str, Any]] = {}

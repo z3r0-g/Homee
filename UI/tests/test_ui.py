@@ -298,6 +298,23 @@ def test_mcp_sync_registry(client):
     assert resp.get_json()["success"] is True
 
 
+def test_mcp_reload_proxy(client, monkeypatch):
+    """UI /api/mcp/reload proxies to the MCP service reload endpoint."""
+    import UI.routes.mcps as mcps_routes
+
+    seen = {}
+
+    def _stub(method, path, json_body=None):
+        seen["method"], seen["path"] = method, path
+        return {"success": True, "count": 2, "ids": ["a", "b"]}, 200
+
+    monkeypatch.setattr(mcps_routes, "_proxy", _stub)
+    resp = client.post("/api/mcp/reload")
+    assert resp.status_code == 200
+    assert resp.get_json()["ids"] == ["a", "b"]
+    assert seen == {"method": "POST", "path": "/api/mcp/reload"}
+
+
 def test_mcp_sync_persists_snapshot_for_marketplace(client, monkeypatch):
     """After a successful remote sync, /api/mcp/remote (no refresh) must
     serve the synced entries — not the stale shipped snapshot."""

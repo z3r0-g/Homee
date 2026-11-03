@@ -57,6 +57,7 @@ control of your data.
 - `GET /api/mcp/remote` — Synced MCP marketplace from Official MCP Registry & Smithery
 - `POST /api/mcp/import/{id}` — 1-click install remote MCP (with auto-resolved endpoint and credentials)
 - `POST /api/mcp/sync` — Sync MCP registry with Official Registry and Smithery
+- `POST /api/mcp/reload` — Reload MCP registry from `mcps.json` (after an out-of-band edit)
 - `GET /api/skills/marketplace` — Skills marketplace synced from Smithery
 - `POST /api/skills/sync` — Sync skills marketplace from Smithery
 - `GET /api/skills/active` — Active skills list
