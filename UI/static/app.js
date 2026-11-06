@@ -182,12 +182,19 @@ function renderBotList() {
         <div class="bot-item${busy ? ' working' : ''}${bot.id === state.currentBotId ? ' active' : ''}" role="button" tabindex="0"
              data-testid="bot-item" data-bot-id="${escapeHtml(bot.id)}" data-bot-name="${escapeHtml(bot.name)}">
             <span class="bot-name"><i class="fa-solid fa-robot" aria-hidden="true"></i> ${escapeHtml(bot.name)}</span>
-            <span class="bot-status">${busy ? 'working' : escapeHtml(bot.status || 'idle')}</span>
+            <span class="bot-status">${busy ? 'working' : escapeHtml(bot.status || 'idle')}
+            <button type="button" class="bot-run-task-overlay" data-bot-id="${escapeHtml(bot.id)}" title="Run Task" aria-label="Run Task"><i class="fa-solid fa-play" aria-hidden="true"></i></button></span>
         </div>`;
     }).join('');
 }
 
 botList.addEventListener('click', (e) => {
+    const runBtn = e.target.closest('.bot-run-task-overlay');
+    if (runBtn) {
+        e.stopPropagation();
+        runBotTask(runBtn.dataset.botId);
+        return;
+    }
     const item = e.target.closest('.bot-item');
     if (item) openBotChat(item.dataset.botId);
 });
@@ -378,8 +385,8 @@ async function openBotChat(botId) {
     infoDiv.className = 'bot-info';
     infoDiv.dataset.botId = bot.id;
     const actions = cfg.enabled
-        ? [['edit', 'fa-pen', 'Edit'], ['disable', 'fa-ban', 'DISABLE']]
-        : [['delete', 'fa-trash', 'Delete'], ['enable', 'fa-rotate-left', 'Re-Enable']];
+        ? [['edit', 'fa-pen', 'Edit'], ['disable', 'fa-ban', 'Disable']]
+        : [['delete', 'fa-trash', 'Delete'], ['enable', 'fa-rotate-left', 'Enable']];
     const actionsHtml = actions.map(([action, icon, label]) =>
         `<button type="button" class="btn-secondary small" data-bot-action="${action}" data-bot-id="${escapeHtml(bot.id)}"><i class="fa-solid ${icon}" aria-hidden="true"></i> ${label}</button>`
     ).join(' ');
@@ -427,17 +434,14 @@ async function openBotChat(botId) {
         <input type="text" id="userMessage" class="chat-input" placeholder="Type a message…" aria-label="Message" autocomplete="off" />
         ${switchHtml}
         <button type="button" class="btn-secondary small" id="attachFileBtn" title="Attach a text file" aria-label="Attach a file"><i class="fa-solid fa-paperclip" aria-hidden="true"></i></button>
-        <button type="button" class="btn-save"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send</button>
-        <button type="button" id="runTaskBtn" class="btn-run-task"${hasTask ? '' : ' data-no-task="1" disabled title="Set a task prompt in Edit Bot to enable scheduled runs — adhoc chat is always available"'}><i class="fa-solid fa-play" aria-hidden="true"></i> Run Task</button>`;
+        <button type="button" class="btn-save"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i> Send</button>`;
     chatArea.appendChild(composer);
 
     const input = $('userMessage');
     const sendBtn = composer.querySelector('.btn-save');
-    const runBtn = $('runTaskBtn');
     if (state.busy[botId]) {
         input.disabled = true;
         sendBtn.disabled = true;
-        runBtn.disabled = true;
     } else {
         input.focus();
     }
@@ -454,7 +458,6 @@ async function openBotChat(botId) {
             sendMessage(input, botId);
         }
     });
-    runBtn.addEventListener('click', () => runBotTask(botId));
     $('clearHistoryBtn')?.addEventListener('click', () => {
         promptClearHistory(botId, $('clearHistoryRange')?.value || 'all');
     });

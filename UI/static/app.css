@@ -225,6 +225,12 @@ body {
    Bot List
    ========================================================== */
 
+.bot-status { position: relative; }
+.bot-run-task-overlay { position:absolute; inset:0; opacity:0; transition:opacity .15s; border:none; background:var(--color-primary,#4f46e5); color:#fff; border-radius:999px; display:flex; align-items:center; justify-content:center; gap:4px; cursor:pointer; font-size:0.8rem; }
+.bot-status:hover .bot-run-task-overlay { opacity:1; }
+.bot-status .bot-run-task-overlay { width:100%; }
+
+
 .bot-item {
     display: flex;
     align-items: center;

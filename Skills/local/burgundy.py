@@ -250,26 +250,33 @@ def get_forecast_by_location(latitude: float = 0.0, longitude: float = 0.0, unit
 
 
 def get_news(topic: str = "", limit: int = 5) -> str:
-    """Fetch current top headlines from Hacker News (public, no API key)."""
+    """Fetch current top headlines from AP News (https://apnews.com/)."""
+    import xml.etree.ElementTree as ET
+
+    url = "https://apnews.com/rss"
     try:
-        ids = requests.get("https://hacker-news.firebaseio.com/v0/topstories.json", timeout=15).json()
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
     except Exception as e:  # noqa: BLE001
         return f"News unavailable: {e}"
+    try:
+        root = ET.fromstring(resp.content)
+    except Exception as e:  # noqa: BLE001
+        return f"News unavailable: {e}"
+
     items = []
-    for sid in (ids or [])[: max(1, min(limit, 10))]:
-        try:
-            item = requests.get(f"https://hacker-news.firebaseio.com/v0/item/{sid}.json", timeout=15).json()
-        except Exception:  # noqa: BLE001
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        if not title:
             continue
-        if not item or item.get("type") != "story":
+        if topic and topic.lower() not in title.lower():
             continue
-        if topic and topic.lower() not in (item.get("title", "") + " " + item.get("text", "")).lower():
-            continue
-        items.append(f"- {item.get('title')} ({item.get('url', 'no url')})")
-        if len(items) >= limit:
+        items.append(f"- {title} ({link or 'no url'})")
+        if len(items) >= max(1, min(limit, 10)):
             break
     if not items:
-        return "No matching news found."
+        return "No news source available."
     return "Current headlines:\n" + "\n".join(items)
 
 
