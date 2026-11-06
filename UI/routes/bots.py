@@ -292,6 +292,7 @@ def _get_mcp_executor_and_tools(bot: Bot):
     system_mcps = [
         {"id": "system_disk", "name": "system_disk", "description": "Check free disk space on root filesystem"},
         {"id": "system_shell", "name": "system_shell", "description": "Execute a shell command"},
+        {"id": "system_date", "name": "system_date", "description": "Get the current date and time"},
     ]
     for sm in system_mcps:
         if not any(t["id"] == sm["id"] for t in mcp_tools):

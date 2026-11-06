@@ -14,6 +14,7 @@ without restarting the service.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from typing import Any, Dict, List, Optional
 
@@ -27,6 +28,11 @@ except ImportError:  # pragma: no cover - ollama is a hard dependency
 from Skills.app import is_tool_support_error
 
 from .config import DEFAULT_SETTINGS, OLLAMA_HOST, load_settings
+
+# Per-call read timeout for Ollama chat so a blocked/slow generation cannot
+# hang a worker forever (gunicorn would otherwise kill it at its 300s
+# timeout, surfacing as a 500). Override with OLLAMA_REQUEST_TIMEOUT (sec).
+OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
 
 
 def _failure(content: str) -> Dict[str, Any]:
@@ -112,7 +118,7 @@ class LLMRouter:
             return None
         # NOTE: the module-level ollama.chat() helpers ignore the host;
         # a Client is required for a custom host to take effect.
-        return ollama.Client(host=host)
+        return ollama.Client(host=host, timeout=OLLAMA_REQUEST_TIMEOUT)
 
     @property
     def client(self) -> Any:

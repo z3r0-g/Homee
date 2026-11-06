@@ -43,7 +43,7 @@ class TideSkill(SkillBase):
 ### MCP Tool Access in Skills
 
 Every skill execution turn automatically receives access to all host MCP servers and bot-assigned MCPs:
-- Built-in MCPs: `mcp_system_disk`, `mcp_system_shell`
+- Built-in MCPs: `mcp_system_disk`, `mcp_system_shell`, `mcp_system_date`
 - User-installed MCPs: `mcp_<server_id>` (e.g. `mcp_github`, `mcp_fetch`, `mcp_slack`, `mcp_weather`, etc.)
 
 Tool results are JSON-serialized and returned to the model automatically.

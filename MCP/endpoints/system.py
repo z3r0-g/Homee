@@ -1,9 +1,10 @@
-"""System MCP endpoints — disk space and shell access."""
+"""System MCP endpoints — disk space, shell access, and current date."""
 
 from __future__ import annotations
 
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 system_bp = Blueprint("system", __name__)
@@ -38,9 +39,25 @@ def mcp_system_shell():
         return jsonify({"error": str(e)}), 500
 
 
+@system_bp.route("/api/mcp/system/date", methods=["GET"])
+def mcp_system_date():
+    now = datetime.now(timezone.utc)
+    return jsonify({
+        "utc": now.isoformat(),
+        "date": now.date().isoformat(),
+        "time": now.strftime("%H:%M:%S"),
+        "day": now.strftime("%A"),
+    })
+
+
 def get_disk_space() -> str:
     total, used, free = shutil.disk_usage("/")
     return f"{free // (2 ** 30)} GB free out of {total // (2 ** 30)} GB"
+
+
+def get_current_date() -> str:
+    """Return the current date and time as a human-readable string (UTC)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def run_shell(command: str) -> str:

@@ -196,6 +196,9 @@ def api_mcp_execute(mcp_id):
         from .endpoints.system import run_shell
         cmd = data.get("command", "")
         return jsonify({"result": run_shell(cmd)})
+    if mcp_id == "system_date":
+        from .endpoints.system import get_current_date
+        return jsonify({"result": get_current_date()})
     _load_mcps()
     mcp = _mcps.get(mcp_id) or MARKETPLACE.get(mcp_id)
     if not mcp:

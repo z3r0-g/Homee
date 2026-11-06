@@ -21,6 +21,25 @@ __all__ = [
 ]
 
 SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+# Ollama client used for all chat calls in this module. A per-call read
+# timeout is set so a blocked/slow Ollama generation cannot hang a worker
+# forever (gunicorn would otherwise kill it at its 300s timeout, surfacing
+# as a 500). Override with OLLAMA_REQUEST_TIMEOUT (seconds).
+OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
+_ollama_client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_REQUEST_TIMEOUT)
+
+# Replace the module-level ollama.chat helper with a timeout-bounded variant
+# so a blocked/slow Ollama generation cannot hang a worker indefinitely
+# (gunicorn would otherwise kill it at its 300s timeout, surfacing as a 500).
+# Call sites keep using ollama.chat(...); tests that patch ollama.chat still
+# work because they replace this name wholesale.
+def ollama_chat(*args, **kwargs):
+    return _ollama_client.chat(*args, **kwargs)
+
+
+ollama.chat = ollama_chat
+
 MAX_KNOWLEDGE_CACHE_CHARS = 8_000
 # Cap on tool-calling rounds per turn: the model may chain several tools
 # (e.g. a news MCP after a weather tool), but a stuck model must not loop

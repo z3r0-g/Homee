@@ -57,6 +57,17 @@ def test_execute_system_disk(client):
     assert "GB free" in result
 
 
+def test_execute_system_date(client):
+    resp = client.post("/api/mcp/execute/system_date", json={})
+    assert resp.status_code == 200
+    result = resp.get_json()["result"]
+    # The shortcut returns get_current_date() as a human-readable string.
+    assert "UTC" in result
+    # Sanity: it parses as a UTC timestamp.
+    from datetime import datetime
+    datetime.strptime(result, "%Y-%m-%d %H:%M:%S UTC")
+
+
 def test_execute_unknown_mcp(client):
     resp = client.post("/api/mcp/execute/does_not_exist", json={})
     assert resp.status_code == 404
