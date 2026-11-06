@@ -216,3 +216,100 @@ def test_marketplace_skill_install_and_reply(client, fake_ollama):
     prompt = fake_ollama[0]["messages"][0]["content"]
     assert entry["name"] in prompt
     assert entry["description"][:40] in prompt
+
+
+# ════════════════════════════════════════════════════════════════
+# Tool-less models: bots keep answering (and disclose no-tool use)
+# ════════════════════════════════════════════════════════════════
+
+def test_bot_chat_survives_tool_less_model(client, monkeypatch):
+    """Regression: on a model without tool support (e.g. gemma3:4b), chat used
+    to return the raw "does not support tools" error instead of an answer."""
+    import ollama
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        if tools:
+            raise Exception("gemma3:4b does not support tools (status code: 400)")
+        return SimpleNamespace(message=_FakeMessage("tool-less reply", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hi"})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["response"] == "tool-less reply"
+    assert "does not support tools" not in body["response"]
+    assert body["sources"] == []
+
+
+def test_bot_run_survives_tool_less_model(client, monkeypatch):
+    """Scheduled/manual task runs recover the same way as chat."""
+    import ollama
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        if tools:
+            raise Exception("gemma3:4b does not support tools (status code: 400)")
+        return SimpleNamespace(message=_FakeMessage("task reply", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    bot_id = _create_bot(client, skill_id="Demo (System Skill)",
+                         task_prompt="check disk space")
+    resp = client.post(f"/api/bots/{bot_id}/run", json={})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["response"] == "task reply"
+    assert body["sources"] == []
+
+
+# ════════════════════════════════════════════════════════════════
+# Sources: tool/MCP use is reported for citation
+# ════════════════════════════════════════════════════════════════
+
+def test_bot_chat_response_includes_sources(client, monkeypatch):
+    import ollama
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        if not any(m.get("role") == "tool" for m in messages):
+            tc = SimpleNamespace(
+                function=SimpleNamespace(name="get_disk_space", arguments={}))
+            return SimpleNamespace(message=_FakeMessage("", [tc]))
+        return SimpleNamespace(message=_FakeMessage("disk report", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "disk?"})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["response"] == "disk report"
+    assert {s["name"] for s in body["sources"]} == {"get_disk_space"}
+    # The assistant history entry carries the sources too.
+    history = client.get(f"/api/bots/{bot_id}").get_json()["conversation_history"]
+    assert history[-1]["role"] == "assistant"
+    assert {s["name"] for s in history[-1]["sources"]} == {"get_disk_space"}
+
+
+def test_bot_chat_labels_mcp_sources(client, monkeypatch):
+    """MCP sources get the MCP's display name for citation, when available."""
+    import ollama
+    from UI.routes import bots
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        if not any(m.get("role") == "tool" for m in messages):
+            tc = SimpleNamespace(
+                function=SimpleNamespace(name="mcp_weather", arguments={"query": "x"}))
+            return SimpleNamespace(message=_FakeMessage("", [tc]))
+        return SimpleNamespace(message=_FakeMessage("sunny", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    monkeypatch.setattr(
+        bots, "_get_mcp_executor_and_tools",
+        lambda bot: (
+            lambda mcp_id, args: {"result": "sunny, 72F"},
+            [{"id": "weather", "name": "Weather Service", "description": "wx"}],
+        ),
+    )
+    bot_id = _create_bot(client, skill_id="Demo (System Skill)", mcps=["weather"])
+    resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "weather?"})
+    assert resp.status_code == 200
+    sources = resp.get_json()["sources"]
+    assert sources == [{"name": "mcp_weather", "kind": "mcp", "label": "Weather Service"}]

@@ -19,7 +19,8 @@ control of your data.
 
 ## Features
 
-- **Bots with assigned Skills** — every bot follows the same local-first base flow: check its bounded knowledge cache, use its assigned Skills and MCP tools for current or verifiable work, then transparently fall back to local-model knowledge when no evidence is available. The shared policy supplies today's UTC date to keep time-sensitive responses relevant; Skills and MCPs extend this base behavior. Combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
+- **Bots with assigned Skills** — every bot follows the same local-first base flow: check its bounded knowledge cache, use its assigned Skills and MCP tools for current or verifiable work, then transparently fall back to local-model knowledge when no evidence is available. The shared policy supplies today's UTC date to keep time-sensitive responses relevant; Skills and MCPs extend this base behavior. Replies cite their real-world sources: every tool/MCP call used in a turn is reported in the response (`sources`) and shown as source chips in the chat, and models without tool-calling support still answer (with disclosure) instead of failing the turn. Combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
+- **Clear Chat History** — per-bot history cleanup from the chat view: pick Today, This week, or All time, confirm in the popup, and both the conversation window and the append-only `history.jsonl` log are trimmed (UTC day/week boundaries).
 - **Ask About a File** — ✅ Available. Paperclip in the composer attaches a text file (`.txt,.md,.json,.py,.log`, <1MB); it is injected into the prompt (truncated to 12k chars) and never written to disk.
 - **Search Across Chats** — ✅ Available. Sidebar search box scans every bot's full chat history (`UI/instances/bots/*/history.jsonl`), debounced, and opens the bot scrolled to the match.
 - **MCP Marketplace** — one-click install from the Official MCP Registry & Smithery; assign MCPs per bot.
@@ -52,8 +53,9 @@ control of your data.
 **Key Endpoints:**
 - `GET /api/bots` — List all bots
 - `POST /api/bots` — Create new bot (with assigned skill + schedule)
-- `POST /api/bots/{id}/chat` — Chat with bot (uses assigned skill, MCP tools, and multimodal attachments)
+- `POST /api/bots/{id}/chat` — Chat with bot (uses assigned skill, MCP tools, and multimodal attachments; response includes `sources` for citation)
 - `POST /api/bots/{id}/run` — Run bot's scheduled task
+- `DELETE /api/bots/{id}/history?range=today|week|all` — Clear chat history for a time range (conversation window + JSONL log)
 - `GET /api/mcp/remote` — Synced MCP marketplace from Official MCP Registry & Smithery
 - `POST /api/mcp/import/{id}` — 1-click install remote MCP (with auto-resolved endpoint and credentials)
 - `POST /api/mcp/sync` — Sync MCP registry with Official Registry and Smithery

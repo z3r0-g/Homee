@@ -321,3 +321,60 @@ def test_default_model_by_ram():
     assert model_catalog.default_model(12.0) == "llama3.2:3b"
     assert model_catalog.default_model(16.0) == "llama3.2:3b"
     assert model_catalog.default_model(None) == "llama3.2:3b"
+
+
+class _ToolLessClient(FakeClient):
+    """FakeClient whose model rejects tool specs (like gemma3:4b)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.chat_calls = []
+
+    def chat(self, model, messages, tools=None):
+        self.chat_calls.append({"tools": tools})
+        if tools:
+            raise RuntimeError(
+                "registry.ollama.ai/library/gemma3:4b does not support tools "
+                "(status code: 400)"
+            )
+        return SimpleNamespace(
+            message=SimpleNamespace(role="assistant",
+                                    content=self.chat_text,
+                                    tool_calls=[]))
+
+
+def test_query_local_retries_without_tools_when_model_rejects_them(_tmp_settings):
+    """A model without tool support must not fail the turn: retry w/o tools."""
+    client = _ToolLessClient(chat_text="plain answer")
+    router = LLMRouter(client=client)
+    tools = [{"type": "function", "function": {"name": "x", "parameters": {}}}]
+    result = router.query_local([{"role": "user", "content": "hi"}], tools=tools)
+    assert "error" not in result
+    assert result["message"]["content"] == "plain answer"
+    assert client.chat_calls[0]["tools"] == tools
+    assert client.chat_calls[1]["tools"] is None
+
+
+def test_query_local_non_tool_error_does_not_retry(_tmp_settings):
+    client = _ToolLessClient(chat_error=Exception("connection refused"))
+    # _ToolLessClient only raises for tools; force a non-tool error instead.
+    client.chat = lambda model, messages, tools=None: (_ for _ in ()).throw(
+        Exception("connection refused"))
+    router = LLMRouter(client=client)
+    tools = [{"type": "function", "function": {"name": "x", "parameters": {}}}]
+    result = router.query_local([{"role": "user", "content": "hi"}], tools=tools)
+    assert "error" in result
+    assert "not reachable" in result["message"]["content"]
+
+
+def test_chat_tool_less_model_answers_without_fallback_error(_tmp_settings):
+    """End-to-end through the router: no error surfaces, no remote fallback."""
+    router = LLMRouter(client=_ToolLessClient(chat_text="still answered"))
+    calls = []
+    router.query_remote = lambda *a, **k: calls.append(1) or {
+        "message": {"role": "assistant", "content": "remote", "tool_calls": []}}
+    tools = [{"type": "function", "function": {"name": "x", "parameters": {}}}]
+    result = router.chat([{"role": "user", "content": "hi"}], tools=tools)
+    assert "error" not in result
+    assert result["message"]["content"] == "still answered"
+    assert calls == [], "local recovery must not trigger a remote fallback"

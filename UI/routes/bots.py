@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
 from flask import Blueprint, jsonify, request
@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from ..config import BOTS_DIR, MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
-from Skills.app import MAX_TOOL_ROUNDS, SkillBase, bot_base_context
+from Skills.app import MAX_TOOL_ROUNDS, SkillBase, bot_base_context, source_kind
 from Skills.local.mastodon import get_server_health
 from Skills.registry import skill_registry
 
@@ -35,6 +35,30 @@ def _local_knowledge_notice(content: str) -> str:
 
 def _iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _label_sources(
+    sources: List[Dict[str, str]], mcp_tools: List[Dict[str, Any]]
+) -> List[Dict[str, str]]:
+    """Attach human-readable MCP names to source entries for citation display."""
+    labeled: List[Dict[str, str]] = []
+    seen = set()
+    for src in sources:
+        name = src.get("name", "")
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        entry = dict(src)
+        if name.startswith("mcp_"):
+            mcp_id = name[len("mcp_"):]
+            match = next(
+                (m for m in mcp_tools if (m.get("id") or m.get("name")) == mcp_id),
+                None,
+            )
+            if match and match.get("name") and match["name"] != mcp_id:
+                entry["label"] = str(match["name"])
+        labeled.append(entry)
+    return labeled
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -255,8 +279,14 @@ def _get_mcp_executor_and_tools(bot: Bot):
                 if m.get("enabled", True):
                     if not bot.mcps or m["id"] in bot.mcps:
                         mcp_tools.append(m)
-    except Exception:
-        pass
+        else:
+            print(f"[UI] MCP service at {MCP_SERVICE_URL} returned {resp.status_code}; "
+                  f"bot {bot.id} keeps built-in tools only")
+    except Exception as e:  # noqa: BLE001
+        # Without the MCP service every local/remote MCP is silently lost;
+        # log it so the bot's missing tools are diagnosable.
+        print(f"[UI] MCP service unreachable at {MCP_SERVICE_URL}: {e}; "
+              f"bot {bot.id} keeps built-in tools only")
 
     # Built-in system tools
     system_mcps = [
@@ -290,13 +320,16 @@ def _fallback_chat_with_tools(
     mcp_tools: List[Dict[str, Any]],
     knowledge_path: Optional[str] = None,
     model: Optional[str] = None,
-) -> str:
+) -> Tuple[str, List[Dict[str, str]]]:
     """Last-resort router chat that still advertises and executes tools.
 
     Used when the skill's own ``execute()`` failed (e.g. the primary model is
     missing): the router's fallback model gets the same tool specs, and tool
     calls are dispatched through the skill's registry/MCP gate exactly as in
     ``SkillBase.execute`` — so a bot keeps its tools on every backend.
+
+    Returns ``(content, sources)`` where sources lists each executed tool/MCP
+    call for citation (same shape as ``SkillResult.sources``).
     """
     try:
         skill = agent_cls() if agent_cls else SkillBase()
@@ -306,6 +339,7 @@ def _fallback_chat_with_tools(
     skill._active_mcp_ids = {m.get("id") or m.get("name") for m in mcp_tools or []}
 
     content = ""
+    sources: List[Dict[str, str]] = []
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         result = llm_router.chat(
             messages,
@@ -313,7 +347,7 @@ def _fallback_chat_with_tools(
             model=model,
         )
         if result.get("error"):
-            return result.get("message", {}).get("content", "")
+            return result.get("message", {}).get("content", ""), sources
         msg = result.get("message", {})
         content = msg.get("content", "") or content
         round_calls = msg.get("tool_calls") or []
@@ -331,8 +365,9 @@ def _fallback_chat_with_tools(
                 name, func.get("arguments") or {},
                 knowledge_path=knowledge_path, mcp_executor=mcp_executor,
             )
+            sources.append({"name": name, "kind": source_kind(name)})
             messages.append({"role": "tool", "content": result_text, "tool_name": name})
-    return content
+    return content, sources
 
 
 @bots_bp.route("/api/server-health", methods=["GET"])
@@ -431,6 +466,84 @@ def bot_history(bot_id):
     return jsonify({"bot_id": bot_id, "history": history, "count": len(history)})
 
 
+@bots_bp.route("/api/bots/<bot_id>/history", methods=["DELETE"])
+def clear_bot_history(bot_id):
+    """Clear a bot's chat history for a time range: ``today``, ``week``, ``all``.
+
+    Trims both the in-memory conversation window and the append-only
+    ``history.jsonl`` log (rewritten without the removed entries). Ranges use
+    UTC day/week boundaries, matching the date-aware base policy. Undated
+    entries are kept for ranged clears (they can't be placed in the range).
+    """
+    bots_repo.load()
+    bot = bots_repo.get(bot_id)
+    if not bot:
+        return jsonify({"error": "Bot not found"}), 404
+
+    range_ = (request.args.get("range") or "all").lower()
+    if range_ not in ("today", "week", "all"):
+        return jsonify({"error": "range must be one of: today, week, all"}), 400
+
+    cutoff: Optional[datetime] = None
+    if range_ == "today":
+        cutoff = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif range_ == "week":
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _in_range(msg: Dict[str, Any]) -> bool:
+        if cutoff is None:
+            return True
+        ts = msg.get("timestamp")
+        if not ts:
+            return False
+        try:
+            dt = datetime.fromisoformat(str(ts))
+        except ValueError:
+            return False
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt >= cutoff
+
+    window_removed = sum(1 for m in (bot.conversation_history or []) if _in_range(m))
+    bot.conversation_history = [
+        m for m in (bot.conversation_history or []) if not _in_range(m)
+    ]
+
+    removed = 0
+    path = _history_path(bot.id)
+    if path.exists():
+        try:
+            kept: List[str] = []
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        kept.append(line)
+                        continue
+                    if isinstance(msg, dict) and _in_range(msg):
+                        removed += 1
+                    else:
+                        kept.append(line)
+            if kept:
+                path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+            else:
+                path.unlink()
+        except OSError as e:
+            return jsonify({"error": f"Could not clear history log: {e}"}), 500
+    else:
+        # Older bots without a log file: count the window trim instead.
+        removed = window_removed
+
+    bot.updated_at = _iso()
+    bots_repo.add(bot)
+    return jsonify({"success": True, "range": range_, "removed": removed})
+
+
 @bots_bp.route("/api/bots/<bot_id>", methods=["PUT"])
 def update_bot(bot_id):
     bots_repo.load()
@@ -521,6 +634,7 @@ def chat_bot(bot_id):
     mcp_executor, mcp_tools = _get_mcp_executor_and_tools(bot)
 
     assistant_response = ""
+    sources: List[Dict[str, str]] = []
 
     # Execute with assigned skill(s) if available
     executed_skill = False
@@ -539,6 +653,7 @@ def chat_bot(bot_id):
             )
             if not res.error:
                 assistant_response = res.content
+                sources = res.sources
                 executed_skill = True
         except Exception:
             executed_skill = False
@@ -555,21 +670,24 @@ def chat_bot(bot_id):
             user_turn["images"] = images
         messages.append(user_turn)
 
-        assistant_response = _local_knowledge_notice(
-            _fallback_chat_with_tools(
-                agent_cls, messages, mcp_executor, mcp_tools,
-                knowledge_path=bot.knowledge_base_path, model=model,
-            )
+        fallback_content, sources = _fallback_chat_with_tools(
+            agent_cls, messages, mcp_executor, mcp_tools,
+            knowledge_path=bot.knowledge_base_path, model=model,
         )
+        assistant_response = _local_knowledge_notice(fallback_content)
+
+    sources = _label_sources(sources, mcp_tools)
 
     received_at = _iso()
     user_entry: Dict[str, Any] = {"role": "user", "content": user_message, "timestamp": sent_at}
     if images:
         user_entry["has_image"] = True
-    new_entries = [
-        user_entry,
-        {"role": "assistant", "content": assistant_response, "timestamp": received_at},
-    ]
+    assistant_entry: Dict[str, Any] = {
+        "role": "assistant", "content": assistant_response, "timestamp": received_at,
+    }
+    if sources:
+        assistant_entry["sources"] = sources
+    new_entries = [user_entry, assistant_entry]
     bot.conversation_history.extend(new_entries)
     bot.conversation_history = bot.conversation_history[-20:]
     _append_history(bot, new_entries)
@@ -581,6 +699,7 @@ def chat_bot(bot_id):
         "bot_id": bot_id,
         "skill": bot.skill_id_list()[0] if bot.skill_id_list() else "",
         "skills": bot.skill_id_list(),
+        "sources": sources,
     })
 
 
@@ -613,6 +732,7 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
     mcp_executor, mcp_tools = _get_mcp_executor_and_tools(bot)
 
     result_text = ""
+    sources: List[Dict[str, str]] = []
     executed_skill = False
     if agent_cls:
         try:
@@ -626,6 +746,7 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
             )
             if not agent_result.error:
                 result_text = agent_result.content
+                sources = agent_result.sources
                 executed_skill = True
         except Exception:
             executed_skill = False
@@ -637,18 +758,24 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         ]
         messages.extend(bot.conversation_history[-20:])
         messages.append({"role": "user", "content": task_prompt})
-        result_text = _local_knowledge_notice(
-            _fallback_chat_with_tools(
-                agent_cls, messages, mcp_executor, mcp_tools,
-                knowledge_path=bot.knowledge_base_path,
-            )
+        fallback_content, sources = _fallback_chat_with_tools(
+            agent_cls, messages, mcp_executor, mcp_tools,
+            knowledge_path=bot.knowledge_base_path,
         )
+        result_text = _local_knowledge_notice(fallback_content)
+
+    sources = _label_sources(sources, mcp_tools)
 
     finished_at = _iso()
 
+    assistant_entry: Dict[str, Any] = {
+        "role": "assistant", "content": result_text, "timestamp": finished_at,
+    }
+    if sources:
+        assistant_entry["sources"] = sources
     new_entries = [
         {"role": "user", "content": task_prompt, "timestamp": started_at},
-        {"role": "assistant", "content": result_text, "timestamp": finished_at},
+        assistant_entry,
     ]
     bot.conversation_history.extend(new_entries)
     bot.conversation_history = bot.conversation_history[-20:]
@@ -663,6 +790,7 @@ def _execute_bot_task(bot_id: str, task_prompt: str | None = None) -> dict:
         "success": True,
         "bot_id": bot_id,
         "response": result_text,
+        "sources": sources,
         "server_health": get_server_health()
     }
 

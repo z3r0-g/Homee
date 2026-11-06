@@ -213,3 +213,90 @@ def test_tool_calls_chain_across_rounds(monkeypatch):
             if m.get("role") == "tool":
                 assert msgs[i - 1].get("role") == "assistant"
                 assert msgs[i - 1].get("tool_calls")
+
+
+# ════════════════════════════════════════════════════════════════
+# Contract: models without tool support still answer
+# ════════════════════════════════════════════════════════════════
+
+def test_tool_less_model_still_answers(monkeypatch):
+    """Regression: a model that rejects tool specs (e.g. gemma3:4b "does not
+    support tools") must not fail the turn — the skill retries without tools
+    instead of returning "Skill LLM error"."""
+    import ollama
+
+    calls = []
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        calls.append({"messages": messages, "tools": tools})
+        if tools:
+            raise Exception(
+                "registry.ollama.ai/library/gemma3:4b does not support tools "
+                "(status code: 400)"
+            )
+        return SimpleNamespace(message=_FakeMessage("answer without tools", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    skill = DemoSkill()
+    result = skill.execute("hello", mcp_tools=[{"id": "fetch", "name": "Fetch"}])
+    assert result.error is None
+    assert result.content == "answer without tools"
+    assert result.tool_calls == []
+    assert calls[0]["tools"], "tools should be advertised on the first attempt"
+    assert calls[-1]["tools"] is None, "the retry must drop tool specs"
+    # The model is told tools are unavailable so it won't claim tool use.
+    note = calls[-1]["messages"][-1]
+    assert note["role"] == "system" and "Tool calling is unavailable" in note["content"]
+
+
+def test_non_tool_error_still_fails_turn(monkeypatch):
+    """A non-tool LLM error keeps the existing failure behavior."""
+    import ollama
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        raise Exception("connection refused")
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    result = DemoSkill().execute("hello")
+    assert result.error is not None
+    assert "Skill LLM error" in result.content
+
+
+# ════════════════════════════════════════════════════════════════
+# Contract: real-world sourcing and citations
+# ════════════════════════════════════════════════════════════════
+
+def test_execute_reports_sources_for_citation(monkeypatch):
+    """Tool/MCP calls made during a turn are reported as citable sources."""
+    import ollama
+
+    def _chat(model=None, messages=None, tools=None, **kwargs):
+        if not any(m.get("role") == "tool" for m in messages):
+            tc = SimpleNamespace(
+                function=SimpleNamespace(name="mcp_fetch", arguments={"query": "x"}))
+            return SimpleNamespace(message=_FakeMessage("", [tc]))
+        return SimpleNamespace(message=_FakeMessage("done", []))
+
+    monkeypatch.setattr(ollama, "chat", _chat)
+    skill = DemoSkill()
+    result = skill.execute("fetch something",
+                           mcp_executor=lambda mid, args: {"result": "page"},
+                           mcp_tools=[{"id": "fetch", "name": "Fetch"}])
+    assert result.error is None
+    assert {"name": "mcp_fetch", "kind": "mcp"} in result.sources
+
+
+def test_base_context_requires_real_world_sources_and_citations():
+    """The shared base policy pins real-world sourcing + citation rules."""
+    from Skills.app import bot_base_context
+
+    ctx = bot_base_context()
+    assert '"Sources:"' in ctx
+    assert "Never invent sources" in ctx
+    assert "local model knowledge" in ctx
+
+
+def test_base_system_prompt_requires_sources():
+    """SkillBase's own prompt carries the sourcing/citation core instructions."""
+    assert "Sources:" in SkillBase.system_prompt
+    assert "Never invent" in SkillBase.system_prompt

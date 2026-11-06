@@ -263,3 +263,73 @@ def test_delete_bot_removes_history_log(client, fake_ollama):
     resp = client.delete(f"/api/bots/{bot_id}")
     assert resp.status_code == 200
     assert not (BOTS_DIR / bot_id).exists()
+
+
+# ════════════════════════════════════════════════════════════════
+# Clear chat history (today / this week / all time)
+# ════════════════════════════════════════════════════════════════
+
+def _seed_old_log_entry(bot_id, content, days_ago):
+    from datetime import datetime, timedelta, timezone
+
+    path = BOTS_DIR / bot_id / "history.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"role": "user", "content": content, "timestamp": ts}) + "\n")
+
+
+def _log_entries(bot_id):
+    path = BOTS_DIR / bot_id / "history.jsonl"
+    if not path.exists():
+        return []
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+def test_clear_history_all_time(client, fake_ollama):
+    bot_id = _create_bot(client)
+    client.post(f"/api/bots/{bot_id}/chat", json={"message": "first"})
+    client.post(f"/api/bots/{bot_id}/chat", json={"message": "second"})
+    resp = client.delete(f"/api/bots/{bot_id}/history?range=all")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["success"] and body["range"] == "all"
+    assert body["removed"] == 4  # 2 user + 2 assistant log entries
+    bot = client.get(f"/api/bots/{bot_id}").get_json()
+    assert bot["conversation_history"] == []
+    assert not (BOTS_DIR / bot_id / "history.jsonl").exists()
+    assert client.get("/api/search?q=first").get_json()["results"] == []
+
+
+def test_clear_history_today_keeps_older_entries(client, fake_ollama):
+    bot_id = _create_bot(client)
+    _seed_old_log_entry(bot_id, "ancient entry", days_ago=3)
+    client.post(f"/api/bots/{bot_id}/chat", json={"message": "today's chat"})
+    resp = client.delete(f"/api/bots/{bot_id}/history?range=today")
+    assert resp.status_code == 200
+    assert resp.get_json()["removed"] == 2  # today's user + assistant
+    assert [m["content"] for m in _log_entries(bot_id)] == ["ancient entry"]
+    bot = client.get(f"/api/bots/{bot_id}").get_json()
+    assert bot["conversation_history"] == []
+
+
+def test_clear_history_week_keeps_last_week(client, fake_ollama):
+    bot_id = _create_bot(client)
+    _seed_old_log_entry(bot_id, "last week entry", days_ago=8)
+    client.post(f"/api/bots/{bot_id}/chat", json={"message": "this week chat"})
+    resp = client.delete(f"/api/bots/{bot_id}/history?range=week")
+    assert resp.status_code == 200
+    assert resp.get_json()["removed"] == 2
+    assert [m["content"] for m in _log_entries(bot_id)] == ["last week entry"]
+
+
+def test_clear_history_invalid_range(client, fake_ollama):
+    bot_id = _create_bot(client)
+    resp = client.delete(f"/api/bots/{bot_id}/history?range=year")
+    assert resp.status_code == 400
+    assert "range" in resp.get_json()["error"]
+
+
+def test_clear_history_bot_not_found(client):
+    resp = client.delete("/api/bots/nope/history?range=all")
+    assert resp.status_code == 404

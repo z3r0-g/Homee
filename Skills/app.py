@@ -15,7 +15,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 import ollama
 
-__all__ = ["SkillBase", "SkillResult"]
+__all__ = [
+    "SkillBase", "SkillResult", "bot_base_context",
+    "is_tool_support_error", "source_kind",
+]
 
 SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 MAX_KNOWLEDGE_CACHE_CHARS = 8_000
@@ -23,6 +26,24 @@ MAX_KNOWLEDGE_CACHE_CHARS = 8_000
 # (e.g. a news MCP after a weather tool), but a stuck model must not loop
 # forever. The final round drops the tool specs to force a text answer.
 MAX_TOOL_ROUNDS = 8
+
+
+def is_tool_support_error(exc: BaseException) -> bool:
+    """True when the LLM backend rejected the request because the model
+    cannot do tool calling (e.g. Ollama's "does not support tools")."""
+    text = str(exc).lower()
+    return "does not support tools" in text or (
+        "tool" in text and "not support" in text
+    )
+
+
+def source_kind(tool_name: str) -> str:
+    """Classify an executed tool call for source citation."""
+    if tool_name.startswith("mcp_"):
+        return "mcp"
+    if tool_name == "knowledge_base":
+        return "knowledge_base"
+    return "tool"
 
 
 def bot_base_context(knowledge_path: Optional[str] = None) -> str:
@@ -50,7 +71,16 @@ def bot_base_context(knowledge_path: Optional[str] = None) -> str:
         "needed; only then answer from local model knowledge. When answering "
         "without cache or tool evidence, clearly say that it is local model "
         f"knowledge and may be outdated as of {today}. Do not claim a tool was "
-        "used when it was not."
+        "used when it was not.\n\n"
+        "Sourcing and citations: every factual, current, or external claim "
+        "must come from the knowledge cache or a real tool/MCP result — never "
+        "from memory alone when a tool could verify it. Always answer the "
+        "question fully first; then, when a tool or MCP result informed the "
+        "answer, cite it by ending the reply with a \"Sources:\" section "
+        "listing each tool or MCP used by name (e.g. \"- mcp_weather "
+        "(Weather Service)\") and any source URLs present in the tool output. "
+        "Never invent sources, URLs, quotes, or citations. If no tool "
+        "or cache evidence is available, say so explicitly instead of citing."
         f"{cache_context}"
     )
 
@@ -62,6 +92,9 @@ class SkillResult:
     tool_calls: List[Dict[str, Any]] = field(default_factory=list)
     knowledge_updated: bool = False
     error: Optional[str] = None
+    # Real-world sources used this turn, for citations: one entry per
+    # executed tool/MCP call, e.g. {"name": "mcp_weather", "kind": "mcp"}.
+    sources: List[Dict[str, str]] = field(default_factory=list)
 
 
 class SkillBase:
@@ -70,7 +103,12 @@ class SkillBase:
     system_prompt: str = (
         "You are a helpful assistant. Always use available skills, tools, and "
         "MCPs to fetch current, up-to-date information instead of relying on "
-        "your training data. Use the tool-calling interface (do not print JSON)."
+        "your training data. Use the tool-calling interface (do not print JSON). "
+        "Only state factual, current, or external claims that are backed by a "
+        "tool/MCP result or the knowledge cache, and cite those sources in a "
+        "\"Sources:\" section. Never invent facts, sources, or URLs; when "
+        "nothing verified is available, say the answer is local model "
+        "knowledge and may be outdated."
     )
     model: str = SKILL_MODEL
     tools: List[Callable[..., Any]] = []
@@ -123,15 +161,17 @@ class SkillBase:
         ollama_tools = self._build_tool_specs(mcp_tools=mcp_tools)
 
         tool_calls: List[Dict[str, Any]] = []
+        sources: List[Dict[str, str]] = []
         knowledge_updated = False
         assistant_content = ""
+        tools_supported = True
 
         # Multi-round tool loop: tools stay advertised on every round so the
         # model can chain calls (e.g. a news MCP after a weather tool) and
         # react to earlier results. Dropping tools after the first round used
         # to make the model conclude it "has no access to the MCP tools".
         for round_no in range(MAX_TOOL_ROUNDS + 1):
-            force_answer = round_no == MAX_TOOL_ROUNDS
+            force_answer = round_no == MAX_TOOL_ROUNDS or not tools_supported
             try:
                 response = ollama.chat(
                     model=self.model,
@@ -139,6 +179,23 @@ class SkillBase:
                     tools=None if force_answer else (ollama_tools or None),
                 )
             except Exception as e:  # noqa: BLE001
+                if not force_answer and ollama_tools and is_tool_support_error(e):
+                    # The model can't do tool calling (e.g. gemma3:4b): drop
+                    # the tool specs and answer without them rather than
+                    # failing the whole turn. The base policy already tells
+                    # the model to disclose answers without tool evidence.
+                    tools_supported = False
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "Tool calling is unavailable for this model on this "
+                            "turn, so no Skill or MCP tool could be run. Answer "
+                            "from the local knowledge cache and your own "
+                            "knowledge, state clearly that no live sources were "
+                            "used, and do not cite or claim any tool result."
+                        ),
+                    })
+                    continue
                 if not tool_calls and not assistant_content:
                     return SkillResult(content=f"Skill LLM error: {e}", error=str(e))
                 assistant_content = f"{assistant_content}\nTool follow-up error: {e}".strip()
@@ -176,6 +233,10 @@ class SkillBase:
                 )
                 if call["name"] == "knowledge_base":
                     knowledge_updated = True
+                sources.append({
+                    "name": call["name"],
+                    "kind": source_kind(call["name"]),
+                })
                 messages.append({
                     "role": "tool",
                     "content": result_text,
@@ -186,6 +247,7 @@ class SkillBase:
             content=assistant_content,
             tool_calls=tool_calls,
             knowledge_updated=knowledge_updated,
+            sources=sources,
         )
 
     # ════════════════════════════════════════════════════════════════

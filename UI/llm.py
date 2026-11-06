@@ -24,6 +24,8 @@ try:
 except ImportError:  # pragma: no cover - ollama is a hard dependency
     ollama = None  # type: ignore
 
+from Skills.app import is_tool_support_error
+
 from .config import DEFAULT_SETTINGS, OLLAMA_HOST, load_settings
 
 
@@ -138,6 +140,14 @@ class LLMRouter:
             response = client.chat(model=model, messages=messages, tools=tools)
             return self._normalize_ollama(response)
         except Exception as e:  # noqa: BLE001
+            if tools and is_tool_support_error(e):
+                # Model can't do tool calling: retry once without tool specs
+                # so the turn still produces an answer.
+                try:
+                    response = client.chat(model=model, messages=messages, tools=None)
+                    return self._normalize_ollama(response)
+                except Exception as e2:  # noqa: BLE001
+                    return _failure(_local_error_message(e2, model))
             return _failure(_local_error_message(e, model))
 
     # ════════════════════════════════════════════════════════════════
@@ -289,6 +299,14 @@ class LLMRouter:
             response = client.chat(model=model, messages=messages, tools=tools)
             return self._normalize_ollama(response)
         except Exception as e:  # noqa: BLE001
+            if tools and is_tool_support_error(e):
+                # Model can't do tool calling (e.g. gemma3:4b): retry once
+                # without tool specs so the turn still produces an answer.
+                try:
+                    response = client.chat(model=model, messages=messages, tools=None)
+                    return self._normalize_ollama(response)
+                except Exception as e2:  # noqa: BLE001
+                    return _failure(_local_error_message(e2, model))
             return _failure(_local_error_message(e, model))
 
     @staticmethod
@@ -355,7 +373,7 @@ class LLMRouter:
         if tools:
             payload["tools"] = tools
 
-        try:
+        def _send() -> Dict[str, Any]:
             resp = requests.post(
                 f"{base_url.rstrip('/')}/chat/completions",
                 headers=headers,
@@ -363,7 +381,19 @@ class LLMRouter:
                 timeout=60,
             )
             resp.raise_for_status()
-            data = resp.json()
+            return resp.json()
+
+        try:
+            try:
+                data = _send()
+            except Exception as e:  # noqa: BLE001
+                # Some OpenAI-compatible endpoints reject tool specs: retry
+                # once without them so the turn still produces an answer.
+                if payload.get("tools") and is_tool_support_error(e):
+                    payload.pop("tools", None)
+                    data = _send()
+                else:
+                    raise
             choice = data.get("choices", [{}])[0]
             msg = choice.get("message", {})
             tool_calls = []

@@ -32,6 +32,7 @@ const newBotModal = $('newBotModal');
 const editBotModal = $('editBotModal');
 const skillModal = $('skillModal');
 const pullModal = $('pullModal');
+const clearHistoryModal = $('clearHistoryModal');
 const headerActions = $('headerActions');
 const llmStatusPill = $('llmStatusPill');
 const mcpStatusPill = $('mcpStatusPill');
@@ -265,7 +266,7 @@ function renderChatHistory(history, historyDiv) {
 
         div.innerHTML = `
             <div class="message-label">${isUser ? 'You' : 'Bot'}</div>
-            <div class="message-content">${isUser ? escapeHtml(msg.content) : formatAssistantMessage(msg.content)}</div>
+            <div class="message-content">${isUser ? escapeHtml(msg.content) : formatAssistantMessage(msg.content)}${isUser ? '' : formatSources(msg.sources)}</div>
             <div>${time}${elapsed}</div>`;
         historyDiv.appendChild(div);
     });
@@ -385,7 +386,16 @@ async function openBotChat(botId) {
     infoDiv.innerHTML = `
         <span class="bot-meta">Skills: ${escapeHtml(resolveSkillNames(bot))} · MCPs: ${(bot.mcps || []).length} · Schedule: ${escapeHtml(scheduleLabel(cfg))} · Last run: ${escapeHtml(lastRun)} · Runs: ${cfg.run_count || 0}</span>
         <div class="bot-health-small" id="botHealth"></div>
-        <div class="bot-actions">${actionsHtml}</div>`;
+        <div class="bot-actions">${actionsHtml}
+            <span class="clear-history-controls">
+                <select id="clearHistoryRange" aria-label="Clear history range" title="How much chat history to clear">
+                    <option value="today">Today</option>
+                    <option value="week">This week</option>
+                    <option value="all">All time</option>
+                </select>
+                <button type="button" class="btn-secondary small" id="clearHistoryBtn"><i class="fa-solid fa-eraser" aria-hidden="true"></i> Clear History</button>
+            </span>
+        </div>`;
     chatArea.appendChild(infoDiv);
 
     const historyDiv = document.createElement('div');
@@ -439,6 +449,9 @@ async function openBotChat(botId) {
         }
     });
     runBtn.addEventListener('click', () => runBotTask(botId));
+    $('clearHistoryBtn')?.addEventListener('click', () => {
+        promptClearHistory(botId, $('clearHistoryRange')?.value || 'all');
+    });
     placePills(composer);
 
     fetchJson('/api/server-health').then(({ ok, data }) => {
@@ -501,6 +514,7 @@ async function sendMessageText(botId, message, input) {
             const receivedAt = new Date();
             content.innerHTML = `
                 ${formatAssistantMessage(data.response)}
+                ${formatSources(data.sources)}
                 <span class="message-time">${receivedAt.toLocaleTimeString()}</span>
                 <span class="message-time"><i class="fa-regular fa-clock" aria-hidden="true"></i> ${formatElapsed(receivedAt - sentAt)}</span>`;
         }
@@ -526,6 +540,46 @@ async function runBotTask(botId) {
     if (viewing) reenableComposer();
     await loadBots();
 }
+
+/* ── Bots: clear chat history ────────────────────────────────────── */
+
+const CLEAR_RANGE_LABELS = { today: 'today', week: 'this week', all: 'all time' };
+let pendingClearHistory = null;
+
+function promptClearHistory(botId, range) {
+    pendingClearHistory = { botId, range };
+    const label = CLEAR_RANGE_LABELS[range] || range;
+    const text = $('clearHistoryText');
+    if (text) {
+        text.textContent = `Permanently delete this bot's chat history for ${label}? This cannot be undone.`;
+    }
+    openModal(clearHistoryModal);
+}
+
+async function clearChatHistory() {
+    if (!pendingClearHistory) return;
+    const { botId, range } = pendingClearHistory;
+    const { ok, data } = await fetchJson(
+        `/api/bots/${encodeURIComponent(botId)}/history?range=${encodeURIComponent(range)}`,
+        { method: 'DELETE' }
+    );
+    if (!ok || data.error) {
+        toast(data.error || 'Could not clear chat history.', 'error');
+        return;
+    }
+    closeModal(clearHistoryModal);
+    pendingClearHistory = null;
+    const removed = data.removed || 0;
+    toast(`Cleared ${removed} message${removed === 1 ? '' : 's'} (${CLEAR_RANGE_LABELS[range] || range}).`, 'success');
+    await loadBots();
+    if (state.currentBotId === botId) openBotChat(botId);
+}
+
+$('confirmClearHistoryBtn')?.addEventListener('click', clearChatHistory);
+$('cancelClearHistoryBtn')?.addEventListener('click', () => {
+    pendingClearHistory = null;
+    closeModal(clearHistoryModal);
+});
 
 /* ── Bots: lifecycle ─────────────────────────────────────────────── */
 
@@ -954,6 +1008,15 @@ chatSearchResults?.addEventListener('keydown', (e) => {
 // Tight markdown renderer with no library and no HTML injection from model
 // output: fenced code is pulled out first, the rest is escaped, then inline
 // markdown and block structure are applied.
+function formatSources(sources) {
+    if (!Array.isArray(sources) || !sources.length) return '';
+    const chips = sources.map(s => {
+        const label = (s && (s.label || s.name)) || '';
+        return label ? `<span class="source-chip">${escapeHtml(label)}</span>` : '';
+    }).filter(Boolean).join('');
+    return chips ? `<div class="message-sources">Sources: ${chips}</div>` : '';
+}
+
 function formatAssistantMessage(text) {
     const codeBlocks = [];
     let body = String(text || '');
