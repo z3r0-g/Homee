@@ -384,8 +384,6 @@ def test_chat_tool_less_model_answers_without_fallback_error(_tmp_settings):
     assert "error" not in result
     assert result["message"]["content"] == "still answered"
     assert calls == [], "local recovery must not trigger a remote fallback"
-<<<<<<< Updated upstream
-=======
 
 
 def test_status_reports_tool_support(_tmp_settings):
@@ -411,4 +409,3 @@ def test_status_tool_support_unknown_without_capabilities(_tmp_settings):
     assert status["configured_model_installed"] is True
     assert status["configured_model_supports_tools"] is None
     assert status["secondary_model_supports_tools"] is None
->>>>>>> Stashed changes

@@ -143,13 +143,10 @@ class LLMRouter:
             if tools and is_tool_support_error(e):
                 # Model can't do tool calling: retry once without tool specs
                 # so the turn still produces an answer.
-<<<<<<< Updated upstream
-=======
                 print(
                     f"[LLM] Secondary model '{model}' does not support tool "
                     "calling; retrying without tools."
                 )
->>>>>>> Stashed changes
                 try:
                     response = client.chat(model=model, messages=messages, tools=None)
                     return self._normalize_ollama(response)
@@ -337,13 +334,10 @@ class LLMRouter:
             if tools and is_tool_support_error(e):
                 # Model can't do tool calling (e.g. gemma3:4b): retry once
                 # without tool specs so the turn still produces an answer.
-<<<<<<< Updated upstream
-=======
                 print(
                     f"[LLM] Model '{model}' does not support tool calling; "
                     "retrying without tools."
                 )
->>>>>>> Stashed changes
                 try:
                     response = client.chat(model=model, messages=messages, tools=None)
                     return self._normalize_ollama(response)
@@ -432,13 +426,10 @@ class LLMRouter:
                 # Some OpenAI-compatible endpoints reject tool specs: retry
                 # once without them so the turn still produces an answer.
                 if payload.get("tools") and is_tool_support_error(e):
-<<<<<<< Updated upstream
-=======
                     print(
                         f"[LLM] Remote model '{model}' rejected tool specs; "
                         "retrying without tools."
                     )
->>>>>>> Stashed changes
                     payload.pop("tools", None)
                     data = _send()
                 else:
