@@ -18,6 +18,7 @@ const state = {
     mcps: { installed: [], market: [], filter: 'all', marketLoaded: false },
     availableSkills: [],
     availableMcps: [],
+    llmToolSupport: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -408,10 +409,15 @@ async function openBotChat(botId) {
 
     const llm = (state.settings && state.settings.llm) || {};
     const smartAvailable = !!llm.secondary_model;
+    const smartTitle = !smartAvailable
+        ? 'Set a secondary model in Settings to enable Smart'
+        : (state.llmToolSupport && state.llmToolSupport.secondary === false
+            ? `${llm.secondary_model} cannot call tools — on Smart, bots answer without their Skills/MCPs`
+            : '');
     const switchHtml = llm.local_model ? `
         <div class="model-switch" role="group" aria-label="Model">
             <button type="button" data-model-choice="fast" class="${state.chatModel === 'fast' ? 'active' : ''}">Fast</button>
-            <button type="button" data-model-choice="smart" class="${state.chatModel === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled title="Set a secondary model in Settings to enable Smart"'}>Smart</button>
+            <button type="button" data-model-choice="smart" class="${state.chatModel === 'smart' ? 'active' : ''}"${smartAvailable ? '' : ' disabled'}${smartTitle ? ` title="${escapeHtml(smartTitle)}"` : ''}>Smart</button>
         </div>` : '';
 
     const hasTask = !!String(cfg.task_prompt || '').trim();
@@ -1301,6 +1307,24 @@ async function loadLlmStatus() {
         text = `Ollama · ${status.configured_model}`;
         level = 'ok';
         if (line) { line.textContent = `Ollama is running with ${status.models.length} model(s) installed.`; line.className = 'llm-status status-ok'; }
+    }
+    state.llmToolSupport = {
+        primary: status.configured_model_supports_tools,
+        secondary: status.secondary_model_supports_tools,
+    };
+    if (status.running) {
+        const noTools = [];
+        if (status.configured_model_installed && status.configured_model_supports_tools === false) {
+            noTools.push(`'${status.configured_model}'`);
+        }
+        if (status.secondary_model && status.secondary_model_supports_tools === false) {
+            noTools.push(`'${status.secondary_model}' (Smart)`);
+        }
+        if (noTools.length) {
+            const warn = `${noTools.join(' and ')} cannot call tools — bots will answer without their Skills/MCPs. Pick a model with tool support in Settings → Models.`;
+            bannerText = bannerText ? `${bannerText} ${warn}` : warn;
+            if (level === 'ok') level = 'warn';
+        }
     }
     setPill(llmStatusPill, text, level);
     if (banner) {

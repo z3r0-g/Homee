@@ -143,6 +143,13 @@ class LLMRouter:
             if tools and is_tool_support_error(e):
                 # Model can't do tool calling: retry once without tool specs
                 # so the turn still produces an answer.
+<<<<<<< Updated upstream
+=======
+                print(
+                    f"[LLM] Secondary model '{model}' does not support tool "
+                    "calling; retrying without tools."
+                )
+>>>>>>> Stashed changes
                 try:
                     response = client.chat(model=model, messages=messages, tools=None)
                     return self._normalize_ollama(response)
@@ -154,6 +161,23 @@ class LLMRouter:
     # Ollama status + model pulls (Settings → Models UI)
     # ════════════════════════════════════════════════════════════════
 
+    def _model_supports_tools(self, model: str) -> Optional[bool]:
+        """Whether an installed model advertises tool calling, or None if
+        unknown (older Ollama, show() unsupported, or model missing)."""
+        client = self.client
+        show = getattr(client, "show", None)
+        if client is None or not callable(show) or not model:
+            return None
+        try:
+            info = show(model)
+        except Exception:  # noqa: BLE001 - missing model / old server
+            return None
+        caps = info.get("capabilities") if isinstance(info, dict) \
+            else getattr(info, "capabilities", None)
+        if not caps:
+            return None
+        return "tools" in caps
+
     def ollama_status(self) -> Dict[str, Any]:
         """Report Ollama reachability, installed models, and model readiness.
 
@@ -163,12 +187,17 @@ class LLMRouter:
         """
         self.refresh_settings()
         configured = self._settings["llm"]["local_model"]
+        secondary = self._settings["llm"].get("secondary_model", "")
         status: Dict[str, Any] = {
             "running": False,
             "host": OLLAMA_HOST,
             "models": [],
             "configured_model": configured,
             "configured_model_installed": False,
+            # None = unknown (older Ollama); True/False once show() reports caps
+            "configured_model_supports_tools": None,
+            "secondary_model": secondary,
+            "secondary_model_supports_tools": None,
             "error": "",
         }
         client = self.client
@@ -196,6 +225,12 @@ class LLMRouter:
         status["configured_model_installed"] = any(
             _model_name_matches(configured, name) for name in models
         )
+        # Tool-calling capability: a configured model without it makes bots
+        # answer without their Skills/MCP tools, so surface it to the UI.
+        if status["configured_model_installed"]:
+            status["configured_model_supports_tools"] = self._model_supports_tools(configured)
+        if secondary and any(_model_name_matches(secondary, name) for name in models):
+            status["secondary_model_supports_tools"] = self._model_supports_tools(secondary)
         return status
 
     def pull_job(self) -> Dict[str, Any]:
@@ -302,6 +337,13 @@ class LLMRouter:
             if tools and is_tool_support_error(e):
                 # Model can't do tool calling (e.g. gemma3:4b): retry once
                 # without tool specs so the turn still produces an answer.
+<<<<<<< Updated upstream
+=======
+                print(
+                    f"[LLM] Model '{model}' does not support tool calling; "
+                    "retrying without tools."
+                )
+>>>>>>> Stashed changes
                 try:
                     response = client.chat(model=model, messages=messages, tools=None)
                     return self._normalize_ollama(response)
@@ -390,6 +432,13 @@ class LLMRouter:
                 # Some OpenAI-compatible endpoints reject tool specs: retry
                 # once without them so the turn still produces an answer.
                 if payload.get("tools") and is_tool_support_error(e):
+<<<<<<< Updated upstream
+=======
+                    print(
+                        f"[LLM] Remote model '{model}' rejected tool specs; "
+                        "retrying without tools."
+                    )
+>>>>>>> Stashed changes
                     payload.pop("tools", None)
                     data = _send()
                 else:

@@ -313,3 +313,20 @@ def test_bot_chat_labels_mcp_sources(client, monkeypatch):
     assert resp.status_code == 200
     sources = resp.get_json()["sources"]
     assert sources == [{"name": "mcp_weather", "kind": "mcp", "label": "Weather Service"}]
+<<<<<<< Updated upstream
+=======
+
+
+def test_create_bot_does_not_wipe_other_bots(client):
+    """Multi-worker gunicorn: each worker keeps its own in-memory repo and
+    save() writes the worker's whole dict — a stale worker must reload before
+    saving, or bots created/deleted since its last load disappear."""
+    from UI.models import bots_repo
+
+    bot_a = _create_bot(client, name="Existing Bot")
+    # Simulate a second gunicorn worker whose memory predates bot A.
+    bots_repo._bots.clear()
+    bot_b = _create_bot(client, name="New Bot")
+    ids = {b["id"] for b in client.get("/api/bots").get_json()["bots"]}
+    assert {bot_a, bot_b} <= ids
+>>>>>>> Stashed changes

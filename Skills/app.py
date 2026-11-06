@@ -184,6 +184,15 @@ class SkillBase:
                     # the tool specs and answer without them rather than
                     # failing the whole turn. The base policy already tells
                     # the model to disclose answers without tool evidence.
+<<<<<<< Updated upstream
+=======
+                    print(
+                        f"[Skills] Model '{self.model}' does not support tool "
+                        "calling; answering without Skills/MCP tools this turn. "
+                        "Pick a model with tool support (e.g. llama3.2:3b) to "
+                        "restore tool access."
+                    )
+>>>>>>> Stashed changes
                     tools_supported = False
                     messages.append({
                         "role": "system",

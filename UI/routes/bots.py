@@ -390,6 +390,10 @@ def list_bots():
 
 @bots_bp.route("/api/bots", methods=["POST"])
 def create_bot():
+    # Reload from disk first: under gunicorn each worker keeps its own
+    # in-memory repo, and save() writes the worker's whole dict — a stale
+    # worker would otherwise wipe bots created/deleted since its last load.
+    bots_repo.load()
     data = request.get_json(silent=True) or {}
     name = data.get("name", "New Bot")
     # Multi-skill: `skill_ids` list wins; legacy single `skill_id` still works.

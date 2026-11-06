@@ -460,10 +460,13 @@ Environment=PATH=${APP_ROOT}/venv/bin
 Environment=UI_PORT=5001
 Environment=MCP_SERVICE_URL=http://127.0.0.1:5002
 
+# NOTE: bot chat/run turns are bounded by this timeout. On CPU-only hosts
+# Ollama generates at a few tokens/sec, so a tool-looping bot turn can take
+# 10+ minutes; 300s kills the worker mid-generation (empty response).
 ExecStart=${APP_ROOT}/venv/bin/gunicorn \\
  --workers ${WORKERS} \\
  --bind 0.0.0.0:5001 \\
- --timeout 300 \\
+ --timeout 1800 \\
  ${UI_ENTRY}
 
 Restart=always

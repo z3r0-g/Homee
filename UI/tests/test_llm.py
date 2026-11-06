@@ -18,14 +18,20 @@ class FakeClient:
     """Minimal stand-in for ollama.Client."""
 
     def __init__(self, models=(), chat_text="hello", chat_error=None,
-                 list_error=None, pull_block=None):
+                 list_error=None, pull_block=None, show_caps=None):
         self.models = list(models)
         self.chat_text = chat_text
         self.chat_error = chat_error
         self.list_error = list_error
         self.pull_block = pull_block
+        self.show_caps = show_caps
         self.pulled = []
         self.last_chat_model = None
+
+    def show(self, model):
+        if self.show_caps is None:
+            raise RuntimeError("show not supported")
+        return SimpleNamespace(capabilities=self.show_caps.get(model))
 
     def list(self):
         if self.list_error is not None:
@@ -378,3 +384,31 @@ def test_chat_tool_less_model_answers_without_fallback_error(_tmp_settings):
     assert "error" not in result
     assert result["message"]["content"] == "still answered"
     assert calls == [], "local recovery must not trigger a remote fallback"
+<<<<<<< Updated upstream
+=======
+
+
+def test_status_reports_tool_support(_tmp_settings):
+    """Status surfaces which configured models can call tools, so the UI can
+    warn that a tool-less model (e.g. gemma3:12b) leaves bots without their
+    Skills/MCPs."""
+    _tmp_settings.write_text(
+        '{"llm": {"local_model": "llama3.2:3b", "secondary_model": "gemma3:12b"}}')
+    client = FakeClient(
+        models=["llama3.2:3b", "gemma3:12b"],
+        show_caps={"llama3.2:3b": ["completion", "tools"],
+                   "gemma3:12b": ["completion", "vision"]})
+    status = LLMRouter(client=client).ollama_status()
+    assert status["configured_model_supports_tools"] is True
+    assert status["secondary_model"] == "gemma3:12b"
+    assert status["secondary_model_supports_tools"] is False
+
+
+def test_status_tool_support_unknown_without_capabilities(_tmp_settings):
+    """Older servers / missing models report None, never a false alarm."""
+    _tmp_settings.write_text('{"llm": {"local_model": "llama3.2:3b"}}')
+    status = LLMRouter(client=FakeClient(models=["llama3.2:3b"])).ollama_status()
+    assert status["configured_model_installed"] is True
+    assert status["configured_model_supports_tools"] is None
+    assert status["secondary_model_supports_tools"] is None
+>>>>>>> Stashed changes
