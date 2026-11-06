@@ -253,28 +253,38 @@ def get_news(topic: str = "", limit: int = 5) -> str:
     """Fetch current top headlines from AP News (https://apnews.com/)."""
     import xml.etree.ElementTree as ET
 
-    url = "https://apnews.com/rss"
-    try:
-        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-        resp.raise_for_status()
-    except Exception as e:  # noqa: BLE001
-        return f"News unavailable: {e}"
-    try:
-        root = ET.fromstring(resp.content)
-    except Exception as e:  # noqa: BLE001
-        return f"News unavailable: {e}"
+    urls = ["https://apnews.com/rss", "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"]
+    resp = None
+    for u in urls:
+        try:
+            r = requests.get(u, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            if r.status_code == 200:
+                resp = r
+                break
+        except Exception:
+            continue
+    if resp is None:
+        return "News unavailable: could not fetch headlines"
+    root = ET.fromstring(resp.content)
 
-    items = []
+    collected = []
     for item in root.iter("item"):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         if not title:
             continue
-        if topic and topic.lower() not in title.lower():
-            continue
-        items.append(f"- {title} ({link or 'no url'})")
-        if len(items) >= max(1, min(limit, 10)):
+        collected.append((title, link))
+        if len(collected) >= max(1, min(limit * 4, 40)):
             break
+
+    if topic:
+        filtered = [t for t in collected if topic.lower() in t[0].lower()]
+        if filtered:
+            collected = filtered
+
+    items = []
+    for title, link in collected[: max(1, min(limit, 10))]:
+        items.append(f"- {title} ({link or 'no url'})")
     if not items:
         return "No news source available."
     return "Current headlines:\n" + "\n".join(items)
