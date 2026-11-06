@@ -409,3 +409,18 @@ def test_status_tool_support_unknown_without_capabilities(_tmp_settings):
     assert status["configured_model_installed"] is True
     assert status["configured_model_supports_tools"] is None
     assert status["secondary_model_supports_tools"] is None
+
+
+def test_catalog_excludes_models_without_tool_capability():
+    """Only tool-capable models appear in the catalog; vision/thinking/code/
+    embedding-only models cannot drive Skills or MCPs and are hidden."""
+    from UI import model_catalog
+
+    names = {m["name"] for m in model_catalog.catalog()["models"]}
+    # Tool-capable models remain
+    assert {"llama3.2:3b", "mistral:7b", "qwen2.5:7b", "llama3.1:8b"} <= names
+    # Non-tool models are excluded
+    excluded = {"gemma3:4b", "gemma3:12b", "deepseek-r1:8b", "codellama:7b",
+                "nomic-embed-text", "x/flux2-klein"}
+    assert names.isdisjoint(excluded), \
+        f"non-tool models leaked into catalog: {names & excluded}"

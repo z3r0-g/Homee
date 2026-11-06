@@ -52,62 +52,6 @@
       "blurb": "Fast general-purpose 7B with function calling."
     },
     {
-      "name": "gemma3:4b",
-      "size_gb": 3.3,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "Small multimodal model \u2014 reads images as well as text."
-    },
-    {
-      "name": "gemma3:12b",
-      "size_gb": 8.1,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "Larger multimodal Gemma for image + text tasks."
-    },
-    {
-      "name": "gemma3:27b",
-      "size_gb": 17.0,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "Flagship multimodal Gemma; needs a roomy host."
-    },
-    {
-      "name": "deepseek-r1:8b",
-      "size_gb": 5.2,
-      "capabilities": [
-        "thinking"
-      ],
-      "blurb": "Reasoning-first model; slower, shows its work."
-    },
-    {
-      "name": "phi4:14b",
-      "size_gb": 9.1,
-      "capabilities": [
-        "thinking"
-      ],
-      "blurb": "Microsoft's 14B reasoning model."
-    },
-    {
-      "name": "llava:7b",
-      "size_gb": 4.7,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "Classic vision model for image questions."
-    },
-    {
-      "name": "qwen2.5vl:7b",
-      "size_gb": 6.0,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "Qwen's vision-language model."
-    },
-    {
       "name": "qwen2.5-coder:7b",
       "size_gb": 4.7,
       "capabilities": [
@@ -117,52 +61,12 @@
       "blurb": "Code-focused Qwen with tool use."
     },
     {
-      "name": "codellama:7b",
-      "size_gb": 3.8,
-      "capabilities": [
-        "code"
-      ],
-      "blurb": "Meta's code specialist."
-    },
-    {
-      "name": "starcoder2:7b",
-      "size_gb": 4.0,
-      "capabilities": [
-        "code"
-      ],
-      "blurb": "Open code model for completion and review."
-    },
-    {
       "name": "llama3.1:70b",
       "size_gb": 40.0,
       "capabilities": [
         "tool"
       ],
       "blurb": "70B flagship; only offered on hosts with RAM to spare."
-    },
-    {
-      "name": "nomic-embed-text",
-      "size_gb": 0.3,
-      "capabilities": [
-        "embedding"
-      ],
-      "blurb": "Text embeddings for search and retrieval."
-    },
-    {
-      "name": "mxbai-embed-large",
-      "size_gb": 0.7,
-      "capabilities": [
-        "embedding"
-      ],
-      "blurb": "Larger embedding model, still tiny on disk."
-    },
-    {
-      "name": "x/flux2-klein",
-      "size_gb": 5.7,
-      "capabilities": [
-        "vision"
-      ],
-      "blurb": "FLUX.2 [klein] image generation model family (4B/9B)."
     }
   ]
 }

@@ -106,6 +106,9 @@ def api_mcps():
         return jsonify({"mcps": list(_mcps.values())})
     data = request.get_json(silent=True) or {}
     mcp_id = data.get("id") or str(int(time.time() * 1000))
+    protocol = data.get("protocol", "http")
+    if protocol not in ("http", "mcp"):
+        return jsonify({"error": "protocol must be 'http' or 'mcp'"}), 400
 
     def _add(mcps):
         mcps[mcp_id] = {
@@ -114,6 +117,7 @@ def api_mcps():
             "description": data.get("description", ""),
             "endpoint": data.get("endpoint", ""),
             "method": data.get("method", "GET"),
+            "protocol": protocol,
             "auth_type": data.get("auth_type", "none"),
             "headers": data.get("headers", {}),
             "created_at": time.time(),
@@ -203,6 +207,18 @@ def api_mcp_execute(mcp_id):
     mcp = _mcps.get(mcp_id) or MARKETPLACE.get(mcp_id)
     if not mcp:
         return jsonify({"error": f"MCP {mcp_id} not found"}), 404
+    if mcp.get("protocol") == "mcp":
+        # MCP-protocol server (e.g. https://api.agentic-news.ai/mcp): speak
+        # JSON-RPC initialize/tools-list/tools-call instead of plain HTTP.
+        from .mcp_client import MCPError, execute_mcp
+        try:
+            return jsonify(execute_mcp(mcp, data))
+        except MCPError as e:
+            body = {"error": str(e)}
+            if e.status_code is not None:
+                body["status_code"] = e.status_code
+                return jsonify(body)
+            return jsonify(body), 502
     # Generic HTTP-based MCP: forward to the configured endpoint. GET
     # requests carry the args as query params (e.g. open-meteo needs
     # latitude/longitude); other methods send them as a JSON body.

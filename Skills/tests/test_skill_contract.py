@@ -294,9 +294,26 @@ def test_base_context_requires_real_world_sources_and_citations():
     assert '"Sources:"' in ctx
     assert "Never invent sources" in ctx
     assert "local model knowledge" in ctx
+    # Bot replies render as Markdown in chat — the policy must ask for it.
+    assert "Markdown" in ctx
 
 
 def test_base_system_prompt_requires_sources():
     """SkillBase's own prompt carries the sourcing/citation core instructions."""
     assert "Sources:" in SkillBase.system_prompt
     assert "Never invent" in SkillBase.system_prompt
+
+
+def test_mcp_protocol_tool_spec_offers_tool_and_arguments():
+    """MCP-protocol servers (protocol="mcp") are advertised with tool/arguments
+    so the model can pick a remote tool; generic HTTP MCPs keep command/query."""
+    skill = DemoSkill()
+    specs = skill._build_tool_specs(mcp_tools=[
+        {"id": "news", "name": "News", "protocol": "mcp"},
+        {"id": "fetch", "name": "Fetch"},
+    ])
+    by_name = {s["function"]["name"]: s for s in specs}
+    mcp_props = by_name["mcp_news"]["function"]["parameters"]["properties"]
+    assert set(mcp_props) == {"tool", "arguments"}
+    http_props = by_name["mcp_fetch"]["function"]["parameters"]["properties"]
+    assert set(http_props) == {"command", "query"}

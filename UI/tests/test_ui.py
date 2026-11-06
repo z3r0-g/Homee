@@ -682,3 +682,22 @@ def test_mcp_status_offline(client, monkeypatch):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["running"] is False
+
+
+def test_mcp_import_defaults_mcp_protocol_for_mcp_endpoints(client, monkeypatch):
+    """Endpoints mounted at /mcp are MCP-protocol servers; imports default
+    their protocol accordingly so execution uses the JSON-RPC handler."""
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.post("/api/mcp/import/custom-news",
+                       json={"endpoint": "https://api.agentic-news.ai/mcp"})
+    assert resp.status_code == 200
+    assert resp.get_json()["mcp"]["protocol"] == "mcp"
+
+
+def test_mcp_import_keeps_http_protocol_for_plain_endpoints(client, monkeypatch):
+    import UI.routes.mcps as mcps_routes
+    monkeypatch.setattr(mcps_routes, "_proxy", _mcp_proxy_stub)
+    resp = client.post("/api/mcp/import/built1")
+    assert resp.status_code == 200
+    assert resp.get_json()["mcp"]["protocol"] == "http"

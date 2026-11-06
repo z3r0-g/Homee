@@ -88,6 +88,10 @@ def sync_model_catalog(force_remote: bool = False) -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             pass
     _load_catalog()
+    # Persist only tool-capable models to the catalog file: non-tool models
+    # (vision-only, thinking-only, code-only, embedding-only) cannot drive
+    # Skills or MCPs and must not be offered for selection.
+    tool_models = [m for m in MODELS if "tool" in m.get("capabilities", [])]
     try:
         with open(_CATALOG_FILE, "w", encoding="utf-8") as f:
             json.dump(
@@ -96,16 +100,17 @@ def sync_model_catalog(force_remote: bool = False) -> Dict[str, Any]:
                     "source_url": source_url,
                     "snapshot_date": "2026-10-30",
                     "capabilities": CAPABILITIES,
-                    "models": MODELS,
+                    "models": tool_models,
                 },
                 f,
                 indent=2,
             )
     except OSError:
         pass
+    _load_catalog()
     return {
         "success": True,
-        "count": len(MODELS),
+        "count": len(tool_models),
         "source": "ollama.com/search?c=local",
         "source_url": source_url,
     }
@@ -113,12 +118,17 @@ def sync_model_catalog(force_remote: bool = False) -> Dict[str, Any]:
 
 def catalog() -> Dict[str, Any]:
     cap = size_cap_gb()
+    # Only tool-capable models are selectable as the local LLM. Vision-only,
+    # thinking-only, code-only, and embedding-only models cannot run Skills or
+    # MCPs, so they are excluded from the catalog entirely. Homee's design
+    # targets a 3B (fast) + 7B (smart) tool-capable model combo.
+    tool_models = [m for m in MODELS if "tool" in m.get("capabilities", [])]
     if cap is None:
-        fitting = list(MODELS)
-        hidden = 0
+        fitting = list(tool_models)
+        hidden = len(tool_models) - len(fitting)
     else:
-        fitting = [m for m in MODELS if m["size_gb"] <= cap]
-        hidden = len(MODELS) - len(fitting)
+        fitting = [m for m in tool_models if m["size_gb"] <= cap]
+        hidden = len(tool_models) - len(fitting)
     search_url = "https://ollama.com/search?c=local"
     if cap is not None:
         search_url += f"&s={cap}"

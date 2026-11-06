@@ -331,6 +331,13 @@
                                     <option value="POST">POST</option>
                                 </select>
                             </div>
+                            <div class="form-group">
+                                <label for="mcpProtocol">Protocol</label>
+                                <select id="mcpProtocol">
+                                    <option value="http">Generic HTTP (forward GET/POST)</option>
+                                    <option value="mcp">MCP protocol (JSON-RPC tools)</option>
+                                </select>
+                            </div>
                             <button type="button" class="btn-save" id="mcpAddBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i> Add Server</button>
                             <div id="mcpAddStatus" class="llm-status" aria-live="polite"></div>
                         </div>

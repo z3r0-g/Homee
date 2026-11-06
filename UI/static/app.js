@@ -1034,74 +1034,207 @@ function formatAssistantMessage(text) {
     body = body.split('\n').map(line => line.replace(/[ \t]+$/, '')).join('\n');
     body = body.replace(/\n{3,}/g, '\n\n').trim();
 
+    // Emphasis-only pass, safe on already-escaped text with no HTML tags yet.
+    // `__`/`_` require word boundaries so snake_case_identifiers survive.
+    const emphasis = (t) => t
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^\w])__([^_\n]+)__(?![\w])/g, '$1<strong>$2</strong>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+        .replace(/(^|[^\w])_([^_\n]+)_(?=[^\w]|$)/g, '$1<em>$2</em>')
+        .replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+
+    // Inline markdown. Anything emitting HTML (code spans, images, links,
+    // autolinks) is stashed as a @@MDn@@ placeholder so later rules can't
+    // corrupt tags or URLs; placeholders restore at the end (nested, since a
+    // stashed link label may itself contain a code-span placeholder).
     const inline = (s) => {
+        const stash = [];
+        const keep = (html) => `@@MD${stash.push(html) - 1}@@`;
         let out = escapeHtml(s);
-        out = out.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-        out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-        out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        out = out.replace(/`([^`\n]+)`/g, (m, code) => keep(`<code>${code}</code>`));
         // Render images created by MCPs and Skills
         out = out.replace(/!\[([^\]\n]*)\]\(([^)\s(]*(?:\([^)\s]*\)[^)\s]*)*)\)/g, (m, alt, url) => {
             if (/^(https?:\/\/|data:image\/|\/)/i.test(url)) {
-                return `<figure class="chat-image-wrap"><img class="chat-image" src="${url}" alt="${alt || 'Image'}" loading="lazy"><figcaption class="chat-image-caption">${alt}</figcaption></figure>`;
+                return keep(`<figure class="chat-image-wrap"><img class="chat-image" src="${url}" alt="${alt || 'Image'}" loading="lazy"><figcaption class="chat-image-caption">${alt}</figcaption></figure>`);
             }
             return alt;
         });
         out = out.replace(/\[([^\]\n]+)\]\(([^)\s(]*(?:\([^)\s]*\)[^)\s]*)*)\)/g, (m, label, url) => {
             if (/^(https?:\/\/|mailto:|\/|#)/.test(url)) {
-                return `<a href="${url}" target="_blank" rel="noopener">${label}</a>`;
+                return keep(`<a href="${url}" target="_blank" rel="noopener">${emphasis(label)}</a>`);
             }
             return label;
         });
+        // Bare URLs. (?<!\() skips [label](url) targets handled above.
+        out = out.replace(/(?<!\()https?:\/\/[^\s<>&]+(?:&amp;[^\s<>&]+)*/g, (m) => {
+            let url = m.replace(/[.,;:!?]+$/, '');
+            while (/[)\]}]$/.test(url)) {
+                const close = url.slice(-1);
+                const open = close === ')' ? '(' : close === ']' ? '[' : '{';
+                if (url.split(close).length - 1 > url.split(open).length - 1) url = url.slice(0, -1);
+                else break;
+            }
+            url = url.replace(/&(lt|gt|quot|#39);$/, '');
+            return keep(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`) + m.slice(url.length);
+        });
+        out = emphasis(out);
+        let prev = null;
+        while (prev !== out) {
+            prev = out;
+            out = out.replace(/@@MD(\d+)@@/g, (m, i) => (stash[Number(i)] !== undefined ? stash[Number(i)] : m));
+        }
         return out;
     };
 
-    const blocks = [];
-    let paragraph = [];
-    let list = null;
-    const flushParagraph = () => {
-        if (paragraph.length) {
-            blocks.push(`<p>${paragraph.map(inline).join('<br>')}</p>`);
-            paragraph = [];
+    // Split a table row on pipes, respecting `code` spans and \| escapes.
+    const splitRow = (line) => {
+        const cells = [];
+        let cur = '';
+        let inCode = false;
+        const src = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+        for (let i = 0; i < src.length; i++) {
+            const ch = src[i];
+            if (ch === '`') inCode = !inCode;
+            if (ch === '|' && !inCode && src[i - 1] !== '\\') {
+                cells.push(cur.trim());
+                cur = '';
+            } else {
+                cur += ch;
+            }
         }
-    };
-    const flushList = () => {
-        if (list) {
-            const items = list.items.map(item => `<li>${inline(item)}</li>`).join('');
-            blocks.push(`<${list.tag}>${items}</${list.tag}>`);
-            list = null;
-        }
+        cells.push(cur.trim());
+        return cells;
     };
 
-    body.split('\n').forEach(line => {
-        const codeMatch = line.match(/^@@CODE(\d+)@@$/);
-        if (codeMatch) {
-            flushParagraph(); flushList();
-            blocks.push(`<pre><code>${escapeHtml(codeBlocks[Number(codeMatch[1])])}</code></pre>`);
-            return;
+    const tableDivider = (line, columns) => {
+        const cells = splitRow(line);
+        if (cells.length !== columns) return null;
+        if (!cells.every(c => /^:?-+:?$/.test(c.replace(/\s/g, '')))) return null;
+        return cells.map(c => {
+            const t = c.replace(/\s/g, '');
+            return t.startsWith(':') && t.endsWith(':') ? 'center' : t.endsWith(':') ? 'right' : '';
+        });
+    };
+
+    // Nested lists: build a tree by indent, then render consecutive
+    // same-tag groups so <ul>/<ol> nest inside their parent <li>.
+    const renderList = (items) => {
+        const roots = [];
+        const stack = [];
+        items.forEach(it => {
+            const node = { tag: it.tag, text: it.text, children: [] };
+            while (stack.length && stack[stack.length - 1].indent >= it.indent) stack.pop();
+            if (stack.length) stack[stack.length - 1].node.children.push(node);
+            else roots.push(node);
+            stack.push({ indent: it.indent, node });
+        });
+        const renderNodes = (nodes) => {
+            let html = '';
+            let i = 0;
+            while (i < nodes.length) {
+                const tag = nodes[i].tag;
+                const group = [];
+                while (i < nodes.length && nodes[i].tag === tag) { group.push(nodes[i]); i++; }
+                html += `<${tag}>${group.map(n =>
+                    `<li>${inline(n.text)}${n.children.length ? renderNodes(n.children) : ''}</li>`).join('')}</${tag}>`;
+            }
+            return html;
+        };
+        return renderNodes(roots);
+    };
+
+    const renderBlocks = (lines) => {
+        const blocks = [];
+        let paragraph = [];
+        const flushParagraph = () => {
+            if (paragraph.length) {
+                blocks.push(`<p>${paragraph.map(inline).join('<br>')}</p>`);
+                paragraph = [];
+            }
+        };
+
+        let i = 0;
+        while (i < lines.length) {
+            const line = lines[i];
+            const codeMatch = line.match(/^@@CODE(\d+)@@$/);
+            if (codeMatch) {
+                flushParagraph();
+                blocks.push(`<pre><code>${escapeHtml(codeBlocks[Number(codeMatch[1])])}</code></pre>`);
+                i++;
+                continue;
+            }
+            const heading = line.match(/^#{1,6}\s+(.*)$/);
+            if (heading) {
+                flushParagraph();
+                blocks.push(`<h4>${inline(heading[1])}</h4>`);
+                i++;
+                continue;
+            }
+            if (/^([-*_])(\s*\1){2,}$/.test(line.trim())) {
+                flushParagraph();
+                blocks.push('<hr>');
+                i++;
+                continue;
+            }
+            if (line.includes('|') && i + 1 < lines.length) {
+                const header = splitRow(line);
+                const aligns = header.length > 1 && tableDivider(lines[i + 1], header.length);
+                if (aligns) {
+                    flushParagraph();
+                    const alignAttr = (idx) => aligns[idx] ? ` style="text-align:${aligns[idx]}"` : '';
+                    const rows = [];
+                    i += 2;
+                    while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
+                        rows.push(splitRow(lines[i]));
+                        i++;
+                    }
+                    const thead = `<tr>${header.map((c, idx) => `<th${alignAttr(idx)}>${inline(c)}</th>`).join('')}</tr>`;
+                    const tbody = rows.map(r =>
+                        `<tr>${r.map((c, idx) => `<td${alignAttr(idx)}>${inline(c)}</td>`).join('')}</tr>`).join('');
+                    blocks.push(`<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`);
+                    continue;
+                }
+            }
+            if (/^>\s?/.test(line)) {
+                flushParagraph();
+                const inner = [];
+                while (i < lines.length && /^>\s?/.test(lines[i])) {
+                    inner.push(lines[i].replace(/^>\s?/, ''));
+                    i++;
+                }
+                blocks.push(`<blockquote>${renderBlocks(inner)}</blockquote>`);
+                continue;
+            }
+            const item = line.match(/^(\s*)(?:([-*])|(\d+)[.)])\s+(.*)$/);
+            if (item) {
+                flushParagraph();
+                const items = [];
+                while (i < lines.length) {
+                    const m = lines[i].match(/^(\s*)(?:([-*])|(\d+)[.)])\s+(.*)$/);
+                    if (!m) break;
+                    items.push({
+                        indent: m[1].replace(/\t/g, '    ').length,
+                        tag: m[2] ? 'ul' : 'ol',
+                        text: m[4],
+                    });
+                    i++;
+                }
+                blocks.push(renderList(items));
+                continue;
+            }
+            if (line.trim() === '') {
+                flushParagraph();
+                i++;
+                continue;
+            }
+            paragraph.push(line);
+            i++;
         }
-        const heading = line.match(/^#{1,6}\s+(.*)$/);
-        if (heading) {
-            flushParagraph(); flushList();
-            blocks.push(`<h4>${inline(heading[1])}</h4>`);
-            return;
-        }
-        const ul = line.match(/^[-*]\s+(.*)$/);
-        const ol = line.match(/^\d+[.)]\s+(.*)$/);
-        if (ul || ol) {
-            flushParagraph();
-            const tag = ul ? 'ul' : 'ol';
-            if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
-            list.items.push((ul || ol)[1]);
-            return;
-        }
-        if (line.trim() === '') {
-            flushParagraph(); flushList();
-            return;
-        }
-        paragraph.push(line);
-    });
-    flushParagraph(); flushList();
-    return blocks.join('');
+        flushParagraph();
+        return blocks.join('');
+    };
+
+    return renderBlocks(body.split('\n'));
 }
 // === formatAssistantMessage:end ===
 
@@ -1886,9 +2019,39 @@ $('skillsSyncBtn')?.addEventListener('click', async () => {
 
 /* ── MCP servers ─────────────────────────────────────────────────── */
 
-function installedMcpHtml(mcp) {
+// Citation counts per MCP id, built from every bot's conversation history:
+// each assistant message's `sources` entries (name "mcp_<id>", kind "mcp")
+// are the same citations shown as source chips in chat.
+function mcpCitationCounts() {
+    const counts = {};
+    (state.bots || []).forEach(bot => {
+        (bot.conversation_history || []).forEach(msg => {
+            const seen = new Set();
+            (msg.sources || []).forEach(src => {
+                if (!src || src.kind !== 'mcp') return;
+                const id = String(src.name || '').replace(/^mcp_/, '');
+                if (!id || seen.has(id)) return;
+                seen.add(id);
+                counts[id] = (counts[id] || 0) + 1;
+            });
+        });
+    });
+    return counts;
+}
+
+function installedMcpHtml(mcp, citations) {
     const enabled = mcp.enabled !== false;
     const id = escapeHtml(mcp.id);
+    const citedBy = (state.bots || []).filter(bot =>
+        (bot.conversation_history || []).some(msg =>
+            (msg.sources || []).some(src => src && src.kind === 'mcp' && String(src.name || '') === `mcp_${mcp.id}`)));
+    const citationPills = citations
+        ? citedBy.map(bot =>
+            `<button type="button" class="source-chip source-chip-link" data-goto-bot="${escapeHtml(bot.id)}" title="Open chat with ${escapeHtml(bot.name)}">${escapeHtml(bot.name)}</button>`).join('')
+        : '';
+    const citationHtml = citations
+        ? `<div class="market-item-sources" title="Cited as a source in ${citations} bot message${citations === 1 ? '' : 's'}"><span class="source-chip"><i class="fa-solid fa-quote-left" aria-hidden="true"></i> Cited ×${citations}</span>${citationPills}</div>`
+        : '';
     return `
     <article class="market-item installed${enabled ? '' : ' is-disabled'}">
         <div class="market-item-body">
@@ -1897,7 +2060,9 @@ function installedMcpHtml(mcp) {
             <div class="market-item-meta">
                 ${mcp.endpoint ? `<span><i class="fa-solid fa-link" aria-hidden="true"></i> ${escapeHtml(mcp.endpoint)}</span>` : ''}
                 ${mcp.method ? `<span>${escapeHtml(mcp.method)}</span>` : ''}
+                <span>${(mcp.protocol || 'http') === 'mcp' ? 'MCP protocol' : 'Generic HTTP'}</span>
             </div>
+            ${citationHtml}
         </div>
         <div class="item-actions">
             <button type="button" class="switch${enabled ? ' on' : ''}" role="switch" aria-checked="${enabled}" data-mcp-action="${enabled ? 'disable' : 'enable'}" data-mcp-id="${id}" aria-label="${enabled ? 'Disable' : 'Enable'} ${escapeHtml(mcp.name || mcp.id)}" title="${enabled ? 'Disable' : 'Enable'}"></button>
@@ -1911,9 +2076,10 @@ function renderInstalledMcps() {
     if (!list) return;
     const query = ($('mcpInstalledSearch')?.value || '').trim().toLowerCase();
     const all = state.mcps.installed;
+    const citations = mcpCitationCounts();
     const shown = all.filter(m => !query || `${m.name} ${m.description || ''} ${m.endpoint || ''}`.toLowerCase().includes(query));
     list.innerHTML = shown.length
-        ? shown.map(installedMcpHtml).join('')
+        ? shown.map(m => installedMcpHtml(m, citations[m.id] || 0)).join('')
         : `<p class="list-empty">${all.length ? 'No matches.' : 'No MCP servers installed'}</p>`;
 }
 
@@ -1948,11 +2114,16 @@ function setMcpAddOpen(open) {
     $('mcpAddToggleBtn')?.setAttribute('aria-expanded', String(open));
 }
 
+function guessMcpProtocol(endpoint) {
+    return (endpoint || '').replace(/\/+$/, '').toLowerCase().endsWith('/mcp') ? 'mcp' : 'http';
+}
+
 function prefillMcpForm(entry) {
     $('mcpName').value = entry.name || '';
     $('mcpDescription').value = entry.description || '';
     $('mcpEndpoint').value = entry.endpoint || '';
     $('mcpMethod').value = entry.method || 'GET';
+    $('mcpProtocol').value = entry.protocol || guessMcpProtocol(entry.endpoint);
     setStatus($('mcpAddStatus'), entry.endpoint
         ? `'${entry.name}' ready — press Add Server to register it.`
         : `'${entry.name}' has no endpoint in the catalogue — enter its URL to continue.`);
@@ -2034,6 +2205,11 @@ bindMarket('mcps', installMarketMcp, (item) => openExternal(item.source_url));
 $('mcpInstalledSearch')?.addEventListener('input', debounce(renderInstalledMcps, 150));
 
 $('mcpList')?.addEventListener('click', async (e) => {
+    const gotoBot = e.target.closest('[data-goto-bot]');
+    if (gotoBot) {
+        openBotChat(gotoBot.dataset.gotoBot);
+        return;
+    }
     const btn = e.target.closest('[data-mcp-action]');
     if (!btn) return;
     const id = btn.dataset.mcpId;
@@ -2105,6 +2281,7 @@ $('mcpAddBtn')?.addEventListener('click', async () => {
         description: $('mcpDescription').value.trim(),
         endpoint,
         method: $('mcpMethod').value,
+        protocol: $('mcpProtocol').value,
     });
     if (!ok) {
         setStatus(statusEl, `Add failed: ${data.error || 'server error'}`, false);

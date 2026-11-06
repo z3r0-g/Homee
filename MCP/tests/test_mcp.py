@@ -200,3 +200,183 @@ def test_execute_upstream_error_returns_clean_error(client, monkeypatch):
     assert data["status_code"] == 404
     assert "404" in data["error"]
     assert "result" not in data
+
+# ══════════════════════════════════════════════════════════════════
+# MCP-protocol servers (JSON-RPC 2.0 over streamable HTTP)
+# ══════════════════════════════════════════════════════════════════
+
+import json as _json
+import threading as _threading
+
+import pytest as _pytest
+
+
+@_pytest.fixture
+def fake_mcp_server():
+    """In-process MCP-protocol server speaking streamable HTTP.
+
+    Responds to initialize/tools-list/tools-call, issues a session id, and
+    answers tools/call with an SSE body to exercise the event-stream parser.
+    """
+    from flask import Flask, Response, jsonify, request
+    from werkzeug.serving import make_server
+
+    app = Flask("fake-mcp-protocol")
+    app.hits = []  # type: ignore[attr-defined]
+
+    @app.post("/mcp")
+    def mcp():
+        payload = request.get_json(force=True)
+        app.hits.append({  # type: ignore[attr-defined]
+            "method": payload.get("method"),
+            "id": payload.get("id"),
+            "params": payload.get("params"),
+            "session": request.headers.get("Mcp-Session-Id"),
+            "accept": request.headers.get("Accept"),
+            "authorization": request.headers.get("Authorization"),
+        })
+        method = payload.get("method")
+        if method == "initialize":
+            resp = jsonify({"jsonrpc": "2.0", "id": payload["id"], "result": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "fake", "version": "0.1"},
+            }})
+            resp.headers["Mcp-Session-Id"] = "sess-123"
+            return resp
+        if method == "notifications/initialized":
+            return "", 202
+        if method == "tools/list":
+            return jsonify({"jsonrpc": "2.0", "id": payload["id"], "result": {"tools": [
+                {"name": "search_news", "description": "Search news",
+                 "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}}},
+            ]}})
+        if method == "tools/call":
+            msg = {"jsonrpc": "2.0", "id": payload["id"], "result": {
+                "content": [{"type": "text", "text": "Headline: MCP lands in Homee"}],
+                "isError": False,
+            }}
+            return Response(f"event: message\ndata: {_json.dumps(msg)}\n\n",
+                            mimetype="text/event-stream")
+        return jsonify({"jsonrpc": "2.0", "id": payload.get("id"),
+                        "error": {"code": -32601, "message": f"No such method: {method}"}})
+
+    @app.post("/mcp-auth")
+    def mcp_auth():
+        return jsonify({"error": "Unauthorized", "message": "Authentication required."}), 401
+
+    server = make_server("127.0.0.1", 0, app)
+    port = server.socket.getsockname()[1]
+    thread = _threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield app, f"http://127.0.0.1:{port}"
+    server.shutdown()
+    thread.join(timeout=5)
+
+
+def _register_protocol_mcp(client, mcp_id, endpoint, **extra):
+    payload = {"id": mcp_id, "name": mcp_id, "endpoint": endpoint, "protocol": "mcp"}
+    payload.update(extra)
+    resp = client.post("/api/mcps", json=payload)
+    assert resp.status_code == 200
+
+
+def test_register_mcp_stores_and_validates_protocol(client):
+    _register_protocol_mcp(client, "news", "https://news.example/mcp")
+    resp = client.get("/api/mcp/news")
+    assert resp.get_json()["mcp"]["protocol"] == "mcp"
+
+    resp = client.post("/api/mcps", json={"id": "bad", "endpoint": "https://x.example",
+                                          "protocol": "carrier-pigeon"})
+    assert resp.status_code == 400
+
+    # Default stays generic HTTP so existing behavior is preserved.
+    _register_mcp(client, "plain", "https://plain.example", "GET")
+    assert client.get("/api/mcp/plain").get_json()["mcp"]["protocol"] == "http"
+
+
+def test_execute_mcp_protocol_calls_tool(client, fake_mcp_server):
+    """Full handshake: initialize → initialized → tools/call, session and
+    auth headers propagated, SSE response normalized to plain text."""
+    app, base = fake_mcp_server
+    _register_protocol_mcp(client, "news", f"{base}/mcp",
+                           headers={"Authorization": "Bearer test-key"})
+
+    resp = client.post("/api/mcp/execute/news",
+                       json={"tool": "search_news", "arguments": {"query": "ai"}})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["result"] == "Headline: MCP lands in Homee"
+    assert data["tool"] == "search_news"
+    assert data["status_code"] == 200
+
+    methods = [h["method"] for h in app.hits]
+    assert methods == ["initialize", "notifications/initialized", "tools/call"]
+    assert app.hits[0]["session"] is None
+    assert all(h["session"] == "sess-123" for h in app.hits[1:])
+    assert all("text/event-stream" in h["accept"] for h in app.hits)
+    assert all(h["authorization"] == "Bearer test-key" for h in app.hits)
+    call = app.hits[-1]["params"]
+    assert call["name"] == "search_news"
+    assert call["arguments"] == {"query": "ai"}
+
+
+def test_execute_mcp_protocol_lists_tools_when_no_tool(client, fake_mcp_server):
+    app, base = fake_mcp_server
+    _register_protocol_mcp(client, "news", f"{base}/mcp")
+
+    resp = client.post("/api/mcp/execute/news", json={"query": "ai"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    tools = data["result"]["tools"]
+    assert tools[0]["name"] == "search_news"
+    assert tools[0]["input_schema"]["properties"]["query"]["type"] == "string"
+    assert "tool" in data["result"]["hint"]
+    assert [h["method"] for h in app.hits] == ["initialize", "notifications/initialized", "tools/list"]
+
+
+def test_execute_mcp_protocol_jsonrpc_passthrough(client, fake_mcp_server):
+    """Hand-crafted JSON-RPC bodies keep working, inside a real session."""
+    app, base = fake_mcp_server
+    _register_protocol_mcp(client, "news", f"{base}/mcp")
+
+    resp = client.post("/api/mcp/execute/news",
+                       json={"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["result"]["tools"][0]["name"] == "search_news"
+    assert [h["method"] for h in app.hits] == ["initialize", "notifications/initialized", "tools/list"]
+    assert app.hits[-1]["id"] == 9  # caller's id preserved
+
+
+def test_execute_mcp_protocol_jsonrpc_error_is_clean(client, fake_mcp_server):
+    _, base = fake_mcp_server
+    _register_protocol_mcp(client, "news", f"{base}/mcp")
+
+    resp = client.post("/api/mcp/execute/news",
+                       json={"jsonrpc": "2.0", "id": 1, "method": "boom"})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "No such method: boom" in data["error"]
+    assert "result" not in data
+
+
+def test_execute_mcp_protocol_auth_error_is_clean(client, fake_mcp_server):
+    """A 401 (e.g. missing API key) surfaces as an error with status_code."""
+    _, base = fake_mcp_server
+    _register_protocol_mcp(client, "news", f"{base}/mcp-auth")
+
+    resp = client.post("/api/mcp/execute/news", json={})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status_code"] == 401
+    assert "401" in data["error"]
+    assert "Authentication required" in data["error"]
+    assert "result" not in data
+
+
+def test_execute_mcp_protocol_unreachable_returns_502(client):
+    _register_protocol_mcp(client, "down", "http://127.0.0.1:1/mcp")
+    resp = client.post("/api/mcp/execute/down", json={})
+    assert resp.status_code == 502
+    assert "error" in resp.get_json()

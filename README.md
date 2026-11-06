@@ -19,11 +19,11 @@ control of your data.
 
 ## Features
 
-- **Bots with assigned Skills** — every bot follows the same local-first base flow: check its bounded knowledge cache, use its assigned Skills and MCP tools for current or verifiable work, then transparently fall back to local-model knowledge when no evidence is available. The shared policy supplies today's UTC date to keep time-sensitive responses relevant; Skills and MCPs extend this base behavior. Replies cite their real-world sources: every tool/MCP call used in a turn is reported in the response (`sources`) and shown as source chips in the chat, and models without tool-calling support still answer (with disclosure) instead of failing the turn. Combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
+- **Bots with assigned Skills** — every bot follows the same local-first base flow: check its bounded knowledge cache, use its assigned Skills and MCP tools for current or verifiable work, then transparently fall back to local-model knowledge when no evidence is available. Bot replies are written and rendered in Markdown (headings, lists, tables, links, code blocks) in the chat view. The shared policy supplies today's UTC date to keep time-sensitive responses relevant; Skills and MCPs extend this base behavior. Replies cite their real-world sources: every tool/MCP call used in a turn is reported in the response (`sources`) and shown as source chips in the chat, and models without tool-calling support still answer (with disclosure) instead of failing the turn. Combine multiple skills per bot (composite system prompt + union of tools), assign multiple MCP servers, set an optional scheduled task prompt, and chat adhoc anytime. Local skills are discovered from `Skills/local/`; marketplace skills install in one click.
 - **Clear Chat History** — per-bot history cleanup from the chat view: pick Today, This week, or All time, confirm in the popup, and both the conversation window and the append-only `history.jsonl` log are trimmed (UTC day/week boundaries).
 - **Ask About a File** — ✅ Available. Paperclip in the composer attaches a text file (`.txt,.md,.json,.py,.log`, <1MB); it is injected into the prompt (truncated to 12k chars) and never written to disk.
 - **Search Across Chats** — ✅ Available. Sidebar search box scans every bot's full chat history (`UI/instances/bots/*/history.jsonl`), debounced, and opens the bot scrolled to the match.
-- **MCP Marketplace** — one-click install from the Official MCP Registry & Smithery; assign MCPs per bot.
+- **MCP Marketplace** — one-click install from the Official MCP Registry & Smithery; assign MCPs per bot. Each installed MCP card shows citation pills when it contributed sources to bot replies — a "Cited ×N" count plus one chip per citing bot (click to open that bot's chat), matching the source chips shown under chat messages.
 - **Local-first LLM** — Ollama-first with remote fallback, RAM-aware model catalog.
 
 ## Architecture
@@ -73,6 +73,9 @@ control of your data.
 - `MCP/app.py` — `create_mcp_app()` Flask app factory + module-level `app` for WSGI deployment
 - `MCP/config.py` — paths, ports, marketplace definitions
 - `MCP/routes.py` — MCP CRUD + marketplace + agent-callable execution endpoint forwarding auth headers
+- `MCP/mcp_client.py` — MCP-protocol client (JSON-RPC 2.0 over streamable HTTP): `initialize` handshake, `Mcp-Session-Id` propagation, `tools/list` / `tools/call`, SSE response parsing
+
+Each registered MCP has a `protocol`: `"http"` (default) forwards args as a plain GET/POST request; `"mcp"` speaks the Model Context Protocol with the server. MCP-protocol executions accept `{"tool": "<name>", "arguments": {...}}` to call a remote tool, a raw JSON-RPC payload (`{"jsonrpc": "2.0", "method": ...}`) for passthrough, or no `tool` to return the server's `tools/list` so the model can discover what's available. Servers requiring credentials (e.g. `https://api.agentic-news.ai/mcp`) read them from the entry's `headers` (e.g. `Authorization: Bearer <key>`).
 
 ## Testing
 

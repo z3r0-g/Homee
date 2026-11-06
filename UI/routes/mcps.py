@@ -10,6 +10,11 @@ from ..registry_sync import auto_resolve_endpoint, sync_mcp_registry
 mcps_bp = Blueprint("mcps", __name__)
 
 
+def _guess_protocol(endpoint: str) -> str:
+    """Default protocol for an endpoint: MCP servers conventionally mount at /mcp."""
+    return "mcp" if (endpoint or "").rstrip("/").lower().endswith("/mcp") else "http"
+
+
 def _proxy(method: str, path: str, json_body=None):
     import requests as _req
 
@@ -97,6 +102,7 @@ def mcp_remote():
             "description": entry.get("description", ""),
             "endpoint": endpoint,
             "method": entry.get("method", "GET"),
+            "protocol": entry.get("protocol") or _guess_protocol(endpoint),
             "source": entry.get("source", "Official MCP Registry"),
             "source_url": entry.get("source_url", snap.get("source_url", "")),
             "requires_auth": requires_auth,
@@ -204,6 +210,7 @@ def mcp_import(mcp_id):
         "description": req_data.get("description") or entry.get("description", ""),
         "endpoint": endpoint,
         "method": req_data.get("method") or entry.get("method", "GET"),
+        "protocol": req_data.get("protocol") or entry.get("protocol") or _guess_protocol(endpoint),
         "auth_type": auth_type,
         "headers": headers,
     }

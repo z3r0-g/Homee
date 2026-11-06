@@ -26,7 +26,7 @@ SKILL_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
 # forever (gunicorn would otherwise kill it at its 300s timeout, surfacing
 # as a 500). Override with OLLAMA_REQUEST_TIMEOUT (seconds).
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
+OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "240"))
 _ollama_client = ollama.Client(host=OLLAMA_HOST, timeout=OLLAMA_REQUEST_TIMEOUT)
 
 # Replace the module-level ollama.chat helper with a timeout-bounded variant
@@ -100,6 +100,9 @@ def bot_base_context(knowledge_path: Optional[str] = None) -> str:
         "(Weather Service)\") and any source URLs present in the tool output. "
         "Never invent sources, URLs, quotes, or citations. If no tool "
         "or cache evidence is available, say so explicitly instead of citing."
+        "\n\nFormatting: write every reply in Markdown — the chat UI renders "
+        "it. Use headings, bold/italic, bullet or numbered lists, tables, "
+        "links, and fenced code blocks whenever they improve readability."
         f"{cache_context}"
     )
 
@@ -386,19 +389,32 @@ class SkillBase:
             mcp_id = mcp.get("id") or mcp.get("name")
             if not mcp_id:
                 continue
+            if mcp.get("protocol") == "mcp":
+                # MCP-protocol servers host named tools with their own input
+                # schemas; the model picks one per call (omit "tool" to list
+                # what the server offers).
+                parameters = {
+                    "type": "object",
+                    "properties": {
+                        "tool": {"type": "string", "description": "Name of a tool on the server; omit to list available tools"},
+                        "arguments": {"type": "object", "description": "Arguments for the chosen tool, matching its input schema"},
+                    },
+                }
+            else:
+                parameters = {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "Command or input parameter for the tool"},
+                        "query": {"type": "string", "description": "Query or parameter for the tool"},
+                    },
+                }
             specs.append(
                 {
                     "type": "function",
                     "function": {
                         "name": f"mcp_{mcp_id}",
                         "description": mcp.get("description") or f"MCP tool: {mcp.get('name', mcp_id)}",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "command": {"type": "string", "description": "Command or input parameter for the tool"},
-                                "query": {"type": "string", "description": "Query or parameter for the tool"},
-                            },
-                        },
+                        "parameters": parameters,
                     },
                 }
             )

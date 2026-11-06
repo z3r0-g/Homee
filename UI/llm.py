@@ -32,7 +32,7 @@ from .config import DEFAULT_SETTINGS, OLLAMA_HOST, load_settings
 # Per-call read timeout for Ollama chat so a blocked/slow generation cannot
 # hang a worker forever (gunicorn would otherwise kill it at its 300s
 # timeout, surfacing as a 500). Override with OLLAMA_REQUEST_TIMEOUT (sec).
-OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
+OLLAMA_REQUEST_TIMEOUT = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "240"))
 
 
 def _failure(content: str) -> Dict[str, Any]:
