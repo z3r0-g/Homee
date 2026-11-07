@@ -344,6 +344,8 @@ def _parse_ps_rows(ps_out: str, limit: int) -> List[List[str]]:
         if len(parts) < 6:
             continue
         pid, user, pcpu, pmem, rss_kb, etime = parts[:6]
+        if not pid.isdigit():
+            continue
         comm = parts[6] if len(parts) > 6 else ""
         try:
             rss_mb = f"{int(rss_kb) / 1024:.0f}M"
@@ -373,6 +375,35 @@ def get_process_snapshot(limit: int = 12) -> str:
         "ps -eo pid,user,pcpu,pmem,rss,etime,comm --sort=-pcpu --no-headers"
     )
     rows = _parse_ps_rows(ps_out, limit)
+
+    if not rows:
+        try:
+            import psutil
+            ps_procs = []
+            for p in psutil.process_iter(['pid', 'name', 'username', 'cpu_percent', 'memory_percent', 'memory_info', 'create_time']):
+                try:
+                    info = p.info
+                    cpu = info.get('cpu_percent') or 0.0
+                    ps_procs.append((cpu, info))
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            ps_procs.sort(key=lambda x: x[0], reverse=True)
+            for cpu, info in ps_procs[:limit]:
+                pid = str(info.get('pid', ''))
+                user = str(info.get('username') or 'local')[:10]
+                if '\\' in user:
+                    user = user.split('\\')[-1]
+                pcpu = f"{cpu:.1f}%"
+                pmem = f"{info.get('memory_percent') or 0.0:.1f}%"
+                mem_info = info.get('memory_info')
+                rss_val = mem_info.rss if mem_info else 0
+                rss = f"{rss_val / (1024*1024):.0f}M"
+                uptime_s = int(time.time() - info['create_time']) if info.get('create_time') else 0
+                etime = _human_duration(uptime_s)
+                comm = str(info.get('name') or '')[:45]
+                rows.append([pid, user, pcpu, pmem, rss, etime, comm])
+        except Exception:
+            pass
 
     lines: List[str] = []
     lines.append("## 🖥️  Process Snapshot")
@@ -475,6 +506,49 @@ def container_health() -> str:
 # ══════════════════════════════════════════════════════════════════
 
 
+def _check_ollama(mcp_executor=None) -> str:
+    """Check Ollama service status cross-platform via MCP shell, HTTP probe, or process scan."""
+    if mcp_executor:
+        try:
+            cmd = "ps -eo comm | grep -q ollama && echo active || echo inactive"
+            res = mcp_executor("system_shell", {"command": cmd})
+            out = ""
+            if isinstance(res, dict):
+                out = str(res.get("stdout") or res.get("result") or "")
+            else:
+                out = str(res)
+            # If the shell explicitly reported inactive or active
+            if "inactive" in out.lower():
+                return "down"
+            if "active" in out.lower():
+                return "active"
+        except Exception:
+            pass
+
+    # Direct HTTP probe to OLLAMA_HOST (works on Windows, Linux, WSL, Docker, remote)
+    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    try:
+        import urllib.request
+        req = urllib.request.Request(f"{ollama_host}/api/tags", headers={"User-Agent": "Homee"})
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status == 200:
+                return "active"
+    except Exception:
+        pass
+
+    # Check local process table via psutil if available
+    try:
+        import psutil
+        for p in psutil.process_iter(["name"]):
+            pname = (p.info.get("name") or "").lower()
+            if "ollama" in pname:
+                return "active"
+    except Exception:
+        pass
+
+    return "down" if mcp_executor else "dry mode (not checked)"
+
+
 class HomeeSkill(SkillBase):
     name = "Homee (Uptime & Backups)"
     description = (
@@ -549,8 +623,11 @@ class HomeeSkill(SkillBase):
             content, updated = self._container_check(), False
         elif any(k in task_lower for k in ["process", "procs", "htop"]):
             content, updated = get_process_snapshot(), False
-        elif "trend" in task_lower:
+        elif any(k in task_lower for k in ["trend"]):
             content, updated = render_trend_report(), False
+        elif any(k in task_lower for k in ["report", "server health"]):
+            health, updated = self._health_check(mcp_executor, knowledge_path)
+            content = f"{render_health_report()}\n\n{health}"
         elif any(k in task_lower for k in ["health", "status", "disk", "ollama", "box"]):
             content, updated = self._health_check(mcp_executor, knowledge_path)
         elif any(k in task_lower for k in ["backup", "drive", "onedrive", "github", "vault", "sync"]):
@@ -592,20 +669,11 @@ class HomeeSkill(SkillBase):
         else:
             lines.append("- **Disk:** MCP executor not available — running in dry mode.")
 
-        # Ollama check via shell MCP
-# Ollama check via shell MCP, falling back to local subprocess
-        # Fixed: use ps-based check since /bin/sh is dash which may not have pgrep
-        if mcp_executor:
-            ollama = mcp_executor("system_shell", {
-                "command": "ps -eo comm | grep -q ollama && echo active || echo inactive"
-            })
-            out = str(ollama.get("result", "")) if isinstance(ollama, dict) else str(ollama)
-            state = "active" if "active" in out.lower() and "inactive" not in out.lower() else "down"
-            lines.append(f"- **Ollama:** {state}")
-            if state == "down":
-                lines.append("- ⚠️ **ALERT:** Ollama is down — bots cannot reason until it is back.")
-        else:
-            lines.append("- **Ollama:** dry mode (not checked).")
+        # Ollama check cross-platform
+        state = _check_ollama(mcp_executor)
+        lines.append(f"- **Ollama:** {state}")
+        if state == "down":
+            lines.append("- ⚠️ **ALERT:** Ollama is down — bots cannot reason until it is back.")
 
         # Persist to the knowledge base (offline RAG)
         if knowledge_path:

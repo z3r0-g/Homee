@@ -15,11 +15,13 @@ from types import SimpleNamespace
 import pytest
 
 from Skills.app import SkillBase, SkillResult
+from Skills.local.alexandria import AlexandriaSkill
 from Skills.local.burgundy import BurgundySkill
+from Skills.local.greenspan import GreenspanSkill
 from Skills.local.homee import HomeeSkill
 from Skills.registry import skill_registry
 
-ALL_LOCAL_SKILLS = [BurgundySkill, HomeeSkill]
+ALL_LOCAL_SKILLS = [BurgundySkill, HomeeSkill, GreenspanSkill, AlexandriaSkill]
 
 EXECUTE_KWARGS = dict(
     conversation_history=[{"role": "user", "content": "earlier turn"}],

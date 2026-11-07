@@ -106,6 +106,41 @@ def bot_base_context(knowledge_path: Optional[str] = None) -> str:
         f"{cache_context}"
     )
 
+def _extract_json_tool_call(
+    text: str,
+    tool_registry: Dict[str, Any],
+    active_mcp_ids: Optional[set] = None,
+) -> Optional[Dict[str, Any]]:
+    """Extract a tool call from content if the model printed JSON instead of structured tool_calls."""
+    import re
+    m = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        data = json.loads(m.group(0))
+        if not isinstance(data, dict):
+            return None
+        name = data.get("name") or data.get("function")
+        if isinstance(name, dict):
+            name = name.get("name")
+        if not name or not isinstance(name, str):
+            return None
+        name = name.strip()
+        args = data.get("parameters") or data.get("arguments") or data.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        is_known = (
+            name in tool_registry
+            or name == "knowledge_base"
+            or (name.startswith("mcp_") and (active_mcp_ids is None or name[4:] in active_mcp_ids))
+        )
+        if is_known:
+            return {"name": name, "arguments": args}
+    except Exception:
+        pass
+    return None
+
+
 @dataclass
 class SkillResult:
     """Result of an Skill execution turn."""
@@ -240,6 +275,10 @@ class SkillBase:
                 }
                 for tc in getattr(msg, "tool_calls", []) or []
             ]
+            if not round_calls and content and "{" in content:
+                extracted = _extract_json_tool_call(content, self._tool_registry, self._active_mcp_ids)
+                if extracted:
+                    round_calls = [extracted]
             if not round_calls:
                 break
             tool_calls.extend(round_calls)
