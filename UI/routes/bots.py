@@ -13,7 +13,7 @@ from ..config import BOTS_DIR, MCP_SERVICE_URL
 from ..llm import LLMRouter
 from ..models import bots_repo, skills_repo, Bot, BotConfig
 from Skills.app import MAX_TOOL_ROUNDS, SkillBase, bot_base_context, source_kind
-from Skills.local.mastodon import get_server_health
+from Skills.local.homee import get_server_health
 from Skills.registry import skill_registry
 
 bots_bp = Blueprint("bots", __name__)
@@ -189,16 +189,12 @@ def _search_bots(query: str, limit: int = 20) -> List[Dict[str, Any]]:
 
 def _resolve_bot_skill(skill_id: Optional[str]) -> Tuple[Optional[Type[SkillBase]], str]:
     """Resolve skill class and system prompt for a given skill_id.
-    Supports discovered skills (e.g. Burgundy, Demo), saved skills, and general skills.
+    Supports discovered skills (e.g. Burgundy, Homee), saved skills, and general skills.
     """
     if not skill_id:
         return SkillBase, SkillBase.system_prompt
 
-    if skill_id == "demo":
-        cls = skill_registry.get_skill("Demo System Skill")
-        if cls:
-            return cls, cls().system_prompt
-    elif skill_id == "general":
+    if skill_id == "general":
         return SkillBase, SkillBase.system_prompt
 
     # Check skill registry first (discovered skills like 'Burgundy Weather Skill')
@@ -229,7 +225,7 @@ def _resolve_bot_skills(skill_ids: List[str]) -> Tuple[Type[SkillBase], str]:
     - One skill -> that skill as-is (custom ``execute()`` preserved).
     - Many skills -> a composite ``SkillBase`` subclass whose system prompt
       joins each skill's instructions and whose tool set is the union of all
-      skills' tools. Skills with a custom ``execute()`` (e.g. HomeKeeper)
+      skills' tools. Skills with a custom ``execute()`` (e.g. Homee)
       contribute their prompt and tools to the composite.
     """
     resolved = [_resolve_bot_skill(sid) for sid in skill_ids if sid]

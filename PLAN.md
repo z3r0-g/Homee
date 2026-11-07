@@ -323,23 +323,15 @@ One switch in Settings that disables every skill marked `writes_external = True`
 
 **Rule:** before changing a skill's behavior, write the test that defines the new utility. No test, no behavior change. Utility tests live in `Skills/tests/test_<skill>_utility.py` and run in the default suite with all external dependencies mocked (no Ollama, no Docker, no network, no MCP service).
 
-### 12.1 Demo (System Skill)
-- **Utility bar:** accurate server health report, live process snapshot, safe disk/shell tools.
-- **Tests to define:** health report renders disk/memory/CPU sections with bars and trends; `ps` output parses into the aligned table; missing `htop` falls back to the psutil summary line (never `top`); ANSI escapes stripped; shell tool honors its timeout.
+### 12.1 Homee (Uptime & Backups)
+- **Utility bar:** deterministic steward — instant answers with no LLM loaded. One skill covering server health, live process snapshots, container reliability, and backups.
+- **Tests to define:** disk >80% used triggers the alert line; Ollama down triggers an alert; health check appends to `knowledge_path`; vault inventory reflects only the bot's assigned MCPs; unrecognized requests return the health+briefing default; MCP executor absent → dry-mode output, no crash; health report renders disk/memory/CPU sections with bars and trends; `ps` output parses into the aligned table; missing `htop` falls back to the psutil summary line (never `top`); ANSI escapes stripped; shell tool honors its timeout; Docker unavailable → plain-language error, no crash; destructive tool without `confirmed_by_admin` is refused; log fetch truncates to the requested tail; container health report counts running vs stopped containers.
 
 ### 12.2 Burgundy (Weather Skill)
 - **Utility bar:** friendly, accurate forecast from a zip, lat/long, or browser geolocation — imperial and metric.
 - **Tests to define:** location resolution precedence (zip > lat/long > location string > plain-language error); metric vs imperial field selection; "Stay classy" sign-off present; HTTP error and connection error produce plain-language messages (partially covered in `Skills/tests/test_skills.py` — extend, don't duplicate).
 
-### 12.3 HomeKeeper (Uptime & Backups)
-- **Utility bar:** deterministic steward — instant answers with no LLM loaded.
-- **Tests to define:** disk >80% used triggers the alert line; Ollama down triggers an alert; health check appends to `knowledge_path`; vault inventory reflects only the bot's assigned MCPs; unrecognized requests return the health+briefing default; MCP executor absent → dry-mode output, no crash.
-
-### 12.4 Shipwright (SRE Skill)
-- **Utility bar:** container health and logs with hard guardrails on destructive actions.
-- **Tests to define:** Docker unavailable → plain-language error, no crash; destructive tool without `confirmed_by_admin` is refused; log fetch truncates to the requested tail; health report counts running vs stopped containers.
-
-**Definition of Done:** all four utility suites exist and pass; each covers the happy path plus the "dependency missing" path. A skill that can't pass its utility bar is fixed or removed from `Skills/local/`.
+**Definition of Done:** all utility suites exist and pass; each covers the happy path plus the "dependency missing" path. A skill that can't pass its utility bar is fixed or removed from `Skills/local/`.
 
 ## Suggested Ship Order
 

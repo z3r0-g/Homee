@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from Skills.app import SkillBase, SkillResult, get_disk_space, run_shell
-from Skills.local.mastodon import DemoSkill
+from Skills.local.homee import HomeeSkill
 from Skills.registry import skill_registry
 
 
@@ -15,10 +15,10 @@ def test_agent_result_defaults():
     assert result.error is None
 
 
-def test_demo_agent_subclass():
-    assert issubclass(DemoSkill, SkillBase)
-    skill = DemoSkill()
-    assert skill.name == "Demo (System Skill)"
+def test_homee_skill_subclass():
+    assert issubclass(HomeeSkill, SkillBase)
+    skill = HomeeSkill()
+    assert skill.name == "Homee (Uptime & Backups)"
     assert skill.model == "llama3.2:3b"
     assert callable(get_disk_space)
     assert callable(run_shell)
@@ -27,18 +27,18 @@ def test_demo_agent_subclass():
 def test_registry_lists_local_agent():
     skills = skill_registry.list_skills()
     names = {a["name"] for a in skills}
-    assert "Demo (System Skill)" in names
+    assert "Homee (Uptime & Backups)" in names
 
 
 def test_build_tool_specs_include_knowledge_base():
-    skill = DemoSkill()
+    skill = HomeeSkill()
     specs = skill._build_tool_specs()
     names = {spec["function"]["name"] for spec in specs}
     assert {"get_disk_space", "run_shell", "knowledge_base"} <= names
 
 
 def test_dispatch_knowledge_base(tmp_path):
-    skill = DemoSkill()
+    skill = HomeeSkill()
     kb = tmp_path / "kb.md"
     result = skill._dispatch_tool("knowledge_base", {"content": "hello pytest"}, knowledge_path=str(kb))
     assert "Knowledge base updated" in result
@@ -46,7 +46,7 @@ def test_dispatch_knowledge_base(tmp_path):
 
 
 def test_dispatch_unknown_tool():
-    skill = DemoSkill()
+    skill = HomeeSkill()
     assert skill._dispatch_tool("no_such_tool", {}) == "Unknown tool: no_such_tool"
 
 

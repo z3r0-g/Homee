@@ -593,9 +593,11 @@ class HomeeSkill(SkillBase):
             lines.append("- **Disk:** MCP executor not available — running in dry mode.")
 
         # Ollama check via shell MCP
+# Ollama check via shell MCP, falling back to local subprocess
+        # Fixed: use ps-based check since /bin/sh is dash which may not have pgrep
         if mcp_executor:
             ollama = mcp_executor("system_shell", {
-                "command": "systemctl is-active ollama 2>/dev/null || pgrep -x ollama >/dev/null && echo active || echo inactive"
+                "command": "ps -eo comm | grep -q ollama && echo active || echo inactive"
             })
             out = str(ollama.get("result", "")) if isinstance(ollama, dict) else str(ollama)
             state = "active" if "active" in out.lower() and "inactive" not in out.lower() else "down"

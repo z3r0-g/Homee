@@ -12,8 +12,7 @@ import pytest
 
 from Skills.app import SkillBase
 from Skills.local.burgundy import BurgundySkill
-from Skills.local.mastodon import DemoSkill
-from Skills.local.homekeeper import HomeKeeperSkill
+from Skills.local.homee import HomeeSkill
 from UI.models import Bot
 from UI.routes.bots import _resolve_bot_skills
 
@@ -80,34 +79,34 @@ def test_resolve_zero_skills_is_base():
 
 
 def test_resolve_single_skill_preserves_custom_execute():
-    cls, prompt = _resolve_bot_skills([HomeKeeperSkill.name])
-    assert cls.name == HomeKeeperSkill.name
+    cls, prompt = _resolve_bot_skills([HomeeSkill.name])
+    assert cls.name == HomeeSkill.name
     assert cls.execute is not SkillBase.execute  # deterministic execute kept
 
 
 def test_resolve_multiple_skills_composite():
-    cls, prompt = _resolve_bot_skills([DemoSkill.name, BurgundySkill.name])
+    cls, prompt = _resolve_bot_skills([HomeeSkill.name, BurgundySkill.name])
     skill = cls()
-    assert "Demo" in skill.name and "Burgundy" in skill.name
-    assert "helpful local system assistant" in prompt
+    assert "Homee" in skill.name and "Burgundy" in skill.name
+    assert "steward of this offline home server" in prompt
     assert "Stay classy" in prompt
     specs = {s["function"]["name"] for s in skill._build_tool_specs()}
     assert {"get_disk_space", "run_shell", "get_weather_forecast", "knowledge_base"} <= specs
 
 
 def test_composite_dedupes_shared_tools():
-    cls, _ = _resolve_bot_skills([DemoSkill.name, DemoSkill.name])
+    cls, _ = _resolve_bot_skills([HomeeSkill.name, HomeeSkill.name])
     specs = [s["function"]["name"] for s in cls()._build_tool_specs()]
     assert specs.count("get_disk_space") == 1
 
 
-def test_composite_with_homekeeper_uses_llm_path():
-    """HomeKeeper's deterministic execute is single-skill only; in a
+def test_composite_with_homee_uses_llm_path():
+    """Homee's deterministic execute is single-skill only; in a
     composite its prompt and tools join the shared LLM turn."""
-    cls, prompt = _resolve_bot_skills([HomeKeeperSkill.name, DemoSkill.name])
+    cls, prompt = _resolve_bot_skills([HomeeSkill.name, BurgundySkill.name])
     assert cls.execute is SkillBase.execute
-    assert "HomeKeeper" in prompt
-    assert "helpful local system assistant" in prompt
+    assert "Homee" in prompt
+    assert "Stay classy" in prompt
 
 
 # ════════════════════════════════════════════════════════════════
@@ -115,46 +114,46 @@ def test_composite_with_homekeeper_uses_llm_path():
 # ════════════════════════════════════════════════════════════════
 
 def test_create_bot_with_multiple_skills_and_mcps(client):
-    bot = _create_bot(client, skill_ids=[DemoSkill.name, BurgundySkill.name],
+    bot = _create_bot(client, skill_ids=[HomeeSkill.name, BurgundySkill.name],
                       mcps=["system_disk", "system_shell"])
-    assert bot["skill_ids"] == [DemoSkill.name, BurgundySkill.name]
-    assert bot["skill_id"] == DemoSkill.name  # primary for legacy readers
+    assert bot["skill_ids"] == [HomeeSkill.name, BurgundySkill.name]
+    assert bot["skill_id"] == HomeeSkill.name  # primary for legacy readers
     assert bot["mcps"] == ["system_disk", "system_shell"]
 
     resp = client.get(f"/api/bots/{bot['id']}")
-    assert resp.get_json()["skill_ids"] == [DemoSkill.name, BurgundySkill.name]
+    assert resp.get_json()["skill_ids"] == [HomeeSkill.name, BurgundySkill.name]
 
 
 def test_create_bot_legacy_skill_id_still_works(client):
-    bot = _create_bot(client, skill_id=DemoSkill.name)
-    assert bot["skill_ids"] == [DemoSkill.name]
-    assert bot["skill_id"] == DemoSkill.name
+    bot = _create_bot(client, skill_id=BurgundySkill.name)
+    assert bot["skill_ids"] == [BurgundySkill.name]
+    assert bot["skill_id"] == BurgundySkill.name
 
 
 def test_update_bot_skill_ids(client):
-    bot = _create_bot(client, skill_ids=[DemoSkill.name])
+    bot = _create_bot(client, skill_ids=[BurgundySkill.name])
     resp = client.put(f"/api/bots/{bot['id']}", json={
-        "skill_ids": [BurgundySkill.name, HomeKeeperSkill.name],
+        "skill_ids": [BurgundySkill.name, HomeeSkill.name],
         "mcps": ["system_disk"],
     })
     assert resp.status_code == 200
     data = resp.get_json()["bot"]
-    assert data["skill_ids"] == [BurgundySkill.name, HomeKeeperSkill.name]
+    assert data["skill_ids"] == [BurgundySkill.name, HomeeSkill.name]
     assert data["skill_id"] == BurgundySkill.name
     assert data["mcps"] == ["system_disk"]
 
 
 def test_multi_skill_bot_replies_with_combined_prompt(client, fake_ollama):
-    bot = _create_bot(client, skill_ids=[DemoSkill.name, BurgundySkill.name])
+    bot = _create_bot(client, skill_ids=[HomeeSkill.name, BurgundySkill.name])
     resp = client.post(f"/api/bots/{bot['id']}/chat", json={"message": "hello"})
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["response"] == "multi reply"
-    assert body["skills"] == [DemoSkill.name, BurgundySkill.name]
-    assert body["skill"] == DemoSkill.name
+    assert body["skills"] == [HomeeSkill.name, BurgundySkill.name]
+    assert body["skill"] == HomeeSkill.name
 
     prompt = fake_ollama[0]["messages"][0]["content"]
-    assert "helpful local system assistant" in prompt
+    assert "steward of this offline home server" in prompt
     assert "Stay classy" in prompt
     tool_names = {t["function"]["name"] for t in fake_ollama[0]["tools"]}
     assert {"get_disk_space", "get_weather_forecast"} <= tool_names
@@ -175,13 +174,13 @@ def test_multi_skill_bot_with_saved_marketplace_skill(client, fake_ollama):
 
 
 def test_multi_skill_bot_run_uses_composite(client, fake_ollama):
-    bot = _create_bot(client, skill_ids=[DemoSkill.name, BurgundySkill.name],
+    bot = _create_bot(client, skill_ids=[HomeeSkill.name, BurgundySkill.name],
                       task_prompt="morning check")
     resp = client.post(f"/api/bots/{bot['id']}/run", json={})
     assert resp.status_code == 200
     assert resp.get_json()["response"] == "multi reply"
     prompt = fake_ollama[0]["messages"][0]["content"]
-    assert "helpful local system assistant" in prompt
+    assert "steward of this offline home server" in prompt
     assert "Stay classy" in prompt
 
 
@@ -203,7 +202,7 @@ def test_multi_skill_bot_mcp_tools_gated(client, monkeypatch):
 
     monkeypatch.setattr(ollama, "chat", _chat)
 
-    bot = _create_bot(client, skill_ids=[DemoSkill.name, BurgundySkill.name],
+    bot = _create_bot(client, skill_ids=[HomeeSkill.name, BurgundySkill.name],
                       mcps=["system_disk"])  # fetch NOT assigned
     resp = client.post(f"/api/bots/{bot['id']}/chat", json={"message": "fetch x"})
     assert resp.status_code == 200

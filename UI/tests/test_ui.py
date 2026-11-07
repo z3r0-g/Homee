@@ -82,7 +82,7 @@ def test_list_skills(client):
     assert resp.status_code == 200
     skills = resp.get_json()["skills"]
     names = {a["name"] for a in skills}
-    assert "Demo (System Skill)" in names
+    assert "Homee (Uptime & Backups)" in names
 
 
 def test_skills_refresh(client):

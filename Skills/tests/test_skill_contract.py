@@ -16,12 +16,10 @@ import pytest
 
 from Skills.app import SkillBase, SkillResult
 from Skills.local.burgundy import BurgundySkill
-from Skills.local.mastodon import DemoSkill
-from Skills.local.homekeeper import HomeKeeperSkill
-from Skills.local.shipwright import ShipwrightSkill
+from Skills.local.homee import HomeeSkill
 from Skills.registry import skill_registry
 
-ALL_LOCAL_SKILLS = [DemoSkill, BurgundySkill, HomeKeeperSkill, ShipwrightSkill]
+ALL_LOCAL_SKILLS = [BurgundySkill, HomeeSkill]
 
 EXECUTE_KWARGS = dict(
     conversation_history=[{"role": "user", "content": "earlier turn"}],
@@ -98,7 +96,7 @@ def test_skill_discovered_in_registry(skill_cls):
 # Contract: LLM-backed skills inject their system prompt first
 # ════════════════════════════════════════════════════════════════
 
-@pytest.mark.parametrize("skill_cls", [DemoSkill, BurgundySkill, ShipwrightSkill],
+@pytest.mark.parametrize("skill_cls", [BurgundySkill],
                          ids=lambda c: c.__name__)
 def test_llm_skill_sends_system_prompt_first(skill_cls, monkeypatch):
     captured = []
@@ -112,18 +110,18 @@ def test_llm_skill_sends_system_prompt_first(skill_cls, monkeypatch):
     assert first["content"] == skill.system_prompt
 
 
-def test_homekeeper_replies_without_llm(monkeypatch):
-    """HomeKeeper is deterministic: no ollama call, instant reply."""
+def test_homee_replies_without_llm(monkeypatch):
+    """Homee is deterministic: no ollama call, instant reply."""
     import ollama
 
     def _boom(**kwargs):
-        raise AssertionError("HomeKeeper must not call the LLM")
+        raise AssertionError("Homee must not call the LLM")
 
     monkeypatch.setattr(ollama, "chat", _boom)
-    skill = HomeKeeperSkill()
+    skill = HomeeSkill()
     result = skill.execute("check disk status", mcp_executor=lambda mid, args: {"result": "42 GB free out of 233 GB"})
     assert result.error is None
-    assert "HomeKeeper" in result.content
+    assert "Homee" in result.content
     assert "Disk" in result.content
 
 
@@ -161,7 +159,7 @@ def test_mcp_tool_call_dispatches_to_executor(monkeypatch):
         executor_calls.append((mcp_id, args))
         return {"result": "page contents"}
 
-    skill = DemoSkill()
+    skill = BurgundySkill()
     result = skill.execute("fetch something", mcp_executor=_executor,
                            mcp_tools=[{"id": "fetch", "name": "Fetch"}])
     assert executor_calls == [("fetch", {"query": "x"})]
@@ -197,7 +195,7 @@ def test_tool_calls_chain_across_rounds(monkeypatch):
         executor_calls.append((mcp_id, args))
         return {"result": "page contents"}
 
-    skill = DemoSkill()
+    skill = BurgundySkill()
     result = skill.execute("fetch then check disk", mcp_executor=_executor,
                            mcp_tools=[{"id": "fetch", "name": "Fetch"}])
     assert result.content == "chained answer"
@@ -237,7 +235,7 @@ def test_tool_less_model_still_answers(monkeypatch):
         return SimpleNamespace(message=_FakeMessage("answer without tools", []))
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    skill = DemoSkill()
+    skill = BurgundySkill()
     result = skill.execute("hello", mcp_tools=[{"id": "fetch", "name": "Fetch"}])
     assert result.error is None
     assert result.content == "answer without tools"
@@ -257,7 +255,7 @@ def test_non_tool_error_still_fails_turn(monkeypatch):
         raise Exception("connection refused")
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    result = DemoSkill().execute("hello")
+    result = BurgundySkill().execute("hello")
     assert result.error is not None
     assert "Skill LLM error" in result.content
 
@@ -278,7 +276,7 @@ def test_execute_reports_sources_for_citation(monkeypatch):
         return SimpleNamespace(message=_FakeMessage("done", []))
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    skill = DemoSkill()
+    skill = BurgundySkill()
     result = skill.execute("fetch something",
                            mcp_executor=lambda mid, args: {"result": "page"},
                            mcp_tools=[{"id": "fetch", "name": "Fetch"}])
@@ -307,7 +305,7 @@ def test_base_system_prompt_requires_sources():
 def test_mcp_protocol_tool_spec_offers_tool_and_arguments():
     """MCP-protocol servers (protocol="mcp") are advertised with tool/arguments
     so the model can pick a remote tool; generic HTTP MCPs keep command/query."""
-    skill = DemoSkill()
+    skill = BurgundySkill()
     specs = skill._build_tool_specs(mcp_tools=[
         {"id": "news", "name": "News", "protocol": "mcp"},
         {"id": "fetch", "name": "Fetch"},

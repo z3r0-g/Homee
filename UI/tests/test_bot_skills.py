@@ -12,8 +12,8 @@ from types import SimpleNamespace
 import pytest
 
 from Skills.app import SkillBase, SkillResult
-from Skills.local.mastodon import DemoSkill
-from Skills.local.homekeeper import HomeKeeperSkill
+from Skills.local.burgundy import BurgundySkill
+from Skills.local.homee import HomeeSkill
 
 
 class _FakeMessage:
@@ -50,17 +50,17 @@ def _create_bot(client, **overrides):
 # ════════════════════════════════════════════════════════════════
 
 def test_bot_replies_with_assigned_skill(client, fake_ollama):
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name)
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hello"})
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["response"] == "skill reply"
-    assert body["skill"] == "Demo (System Skill)"
+    assert body["skill"] == BurgundySkill.name
     # The skill's system prompt leads the messages sent to the LLM.
     first = fake_ollama[0]["messages"][0]
     assert first["role"] == "system"
-    assert first["content"] == DemoSkill.system_prompt
-    assert "helpful" not in first["content"].lower() or DemoSkill.system_prompt != SkillBase.system_prompt
+    assert first["content"] == BurgundySkill.system_prompt
+    assert "helpful" not in first["content"].lower() or BurgundySkill.system_prompt != SkillBase.system_prompt
 
 
 def test_bot_without_skill_uses_base_prompt(client, fake_ollama):
@@ -107,7 +107,7 @@ def test_fallback_still_advertises_and_executes_tools(client, monkeypatch):
     specs are advertised and tool calls are dispatched through the MCP gate."""
     from UI.routes import bots
 
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name)
     monkeypatch.setattr(
         SkillBase,
         "execute",
@@ -150,32 +150,32 @@ def test_bot_with_saved_skill_uses_saved_prompt(client, fake_ollama):
 
 
 def test_bot_run_uses_assigned_skill(client, fake_ollama):
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)",
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name,
                          task_prompt="check disk space")
     resp = client.post(f"/api/bots/{bot_id}/run", json={})
     assert resp.status_code == 200
     assert resp.get_json()["response"] == "skill reply"
-    assert fake_ollama[0]["messages"][0]["content"] == DemoSkill.system_prompt
+    assert fake_ollama[0]["messages"][0]["content"] == BurgundySkill.system_prompt
 
 
-def test_homekeeper_bot_replies_deterministically(client, monkeypatch):
-    """A HomeKeeper bot replies through its skill without any LLM call."""
+def test_homee_bot_replies_deterministically(client, monkeypatch):
+    """A Homee bot replies through its skill without any LLM call."""
     import ollama
 
     def _boom(**kwargs):
-        raise AssertionError("HomeKeeper must not call the LLM")
+        raise AssertionError("Homee must not call the LLM")
 
     monkeypatch.setattr(ollama, "chat", _boom)
-    bot_id = _create_bot(client, skill_id=HomeKeeperSkill.name)
+    bot_id = _create_bot(client, skill_id=HomeeSkill.name)
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "check disk status"})
     assert resp.status_code == 200
     body = resp.get_json()
-    assert "HomeKeeper" in body["response"]
+    assert "Homee" in body["response"]
     assert "Disk" in body["response"]
 
 
 def test_bot_chat_history_recorded(client, fake_ollama):
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name)
     client.post(f"/api/bots/{bot_id}/chat", json={"message": "first question"})
     resp = client.get(f"/api/bots/{bot_id}")
     history = resp.get_json()["conversation_history"]
@@ -233,7 +233,7 @@ def test_bot_chat_survives_tool_less_model(client, monkeypatch):
         return SimpleNamespace(message=_FakeMessage("tool-less reply", []))
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name)
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "hi"})
     assert resp.status_code == 200
     body = resp.get_json()
@@ -252,7 +252,7 @@ def test_bot_run_survives_tool_less_model(client, monkeypatch):
         return SimpleNamespace(message=_FakeMessage("task reply", []))
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)",
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name,
                          task_prompt="check disk space")
     resp = client.post(f"/api/bots/{bot_id}/run", json={})
     assert resp.status_code == 200
@@ -276,7 +276,7 @@ def test_bot_chat_response_includes_sources(client, monkeypatch):
         return SimpleNamespace(message=_FakeMessage("disk report", []))
 
     monkeypatch.setattr(ollama, "chat", _chat)
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)")
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name)
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "disk?"})
     assert resp.status_code == 200
     body = resp.get_json()
@@ -308,7 +308,7 @@ def test_bot_chat_labels_mcp_sources(client, monkeypatch):
             [{"id": "weather", "name": "Weather Service", "description": "wx"}],
         ),
     )
-    bot_id = _create_bot(client, skill_id="Demo (System Skill)", mcps=["weather"])
+    bot_id = _create_bot(client, skill_id=BurgundySkill.name, mcps=["weather"])
     resp = client.post(f"/api/bots/{bot_id}/chat", json={"message": "weather?"})
     assert resp.status_code == 200
     sources = resp.get_json()["sources"]
